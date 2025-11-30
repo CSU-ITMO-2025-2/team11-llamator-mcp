@@ -9,14 +9,18 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
   && rm -rf /var/lib/apt/lists/*
 
 RUN pip install "poetry==${POETRY_VERSION}"
 
 COPY pyproject.toml poetry.lock* /app/
-RUN poetry install --only main --no-interaction --no-ansi
+RUN poetry install --only main --no-interaction --no-ansi --no-root
 
 COPY src /app/src
+
+ENV PYTHONPATH="/app/src:${PYTHONPATH}"
+RUN python -c "import importlib; importlib.import_module('llamator_mcp_server')"
 
 RUN useradd --create-home --uid 10001 appuser \
   && mkdir -p /data/artifacts \
