@@ -1,0 +1,99 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  tgi:
+    image: ghcr.io/huggingface/text-generation-inference:3.3.6
+    ports:
+      - "8080:80"
+    environment:
+      HF_HOME: /data/hf
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - hf-cache:/data
+    command:
+      [
+        "--model-id",
+        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
+        "--port",
+        "80",
+        "--max-input-length",
+        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
+        "--max-total-tokens",
+        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
+      ]
+    profiles: [ "cpu" ]
+
+  tgi_gpu:
+    image: ghcr.io/huggingface/text-generation-inference:3.3.6
+    ports:
+      - "8080:80"
+    environment:
+      HF_HOME: /data/hf
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - hf-cache:/data
+    command:
+      [
+        "--model-id",
+        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
+        "--port",
+        "80",
+        "--max-input-length",
+        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
+        "--max-total-tokens",
+        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
+      ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [ "gpu" ]
+    profiles: [ "gpu" ]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    environment:
+      LLAMATOR_MCP_REDIS_DSN: ${LLAMATOR_MCP_REDIS_DSN:-redis://redis:6379/0}
+      LLAMATOR_MCP_ARTIFACTS_ROOT: ${LLAMATOR_MCP_ARTIFACTS_ROOT:-/data/artifacts}
+      LLAMATOR_MCP_AUX_OPENAI_BASE_URL: ${LLAMATOR_MCP_AUX_OPENAI_BASE_URL:-http://tgi:80/v1}
+      LLAMATOR_MCP_AUX_OPENAI_MODEL: ${LLAMATOR_MCP_AUX_OPENAI_MODEL:-tgi}
+      LLAMATOR_MCP_AUX_OPENAI_API_KEY: ${LLAMATOR_MCP_AUX_OPENAI_API_KEY:-dummy}
+      LLAMATOR_MCP_API_KEY: ${LLAMATOR_MCP_API_KEY:-}
+      LLAMATOR_MCP_LOG_LEVEL: ${LLAMATOR_MCP_LOG_LEVEL:-INFO}
+    volumes:
+      - artifacts:/data/artifacts
+    ports:
+      - "8000:8000"
+    command: [ "uvicorn", "llamator_mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000" ]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    environment:
+      LLAMATOR_MCP_REDIS_DSN: ${LLAMATOR_MCP_REDIS_DSN:-redis://redis:6379/0}
+      LLAMATOR_MCP_ARTIFACTS_ROOT: ${LLAMATOR_MCP_ARTIFACTS_ROOT:-/data/artifacts}
+      LLAMATOR_MCP_AUX_OPENAI_BASE_URL: ${LLAMATOR_MCP_AUX_OPENAI_BASE_URL:-http://tgi:80/v1}
+      LLAMATOR_MCP_AUX_OPENAI_MODEL: ${LLAMATOR_MCP_AUX_OPENAI_MODEL:-tgi}
+      LLAMATOR_MCP_AUX_OPENAI_API_KEY: ${LLAMATOR_MCP_AUX_OPENAI_API_KEY:-dummy}
+      LLAMATOR_MCP_LOG_LEVEL: ${LLAMATOR_MCP_LOG_LEVEL:-INFO}
+    volumes:
+      - artifacts:/data/artifacts
+    command: [ "arq", "llamator_mcp_server.worker_settings.WorkerSettings" ]
+
+volumes:
+  redis-data:
+  hf-cache:
+  artifacts:
