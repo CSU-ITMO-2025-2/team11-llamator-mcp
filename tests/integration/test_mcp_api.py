@@ -1,3 +1,4 @@
+# llamator-mcp-server/tests/integration/test_mcp_api.py
 from __future__ import annotations
 
 import json
@@ -5,7 +6,7 @@ from typing import Any
 
 from llamator_mcp_server.domain.models import JobStatus
 from llamator_mcp_server.domain.models import LlamatorJobInfo
-from llamator_mcp_server.domain.models import LlamatorTestRunResponse
+
 from tests.conftest import McpJsonRpcClient
 from tests.conftest import McpSession
 
@@ -77,11 +78,18 @@ def test_mcp_create_and_get_run(
     created_struct: dict[str, Any] | None = _extract_structured(created_result)
     created_fallback: dict[str, Any] | None = _extract_text_json_from_content(created_result)
     created_payload: dict[str, Any] = created_struct or created_fallback or {}
-    created: LlamatorTestRunResponse = LlamatorTestRunResponse.model_validate(created_payload)
+    created: LlamatorJobInfo = LlamatorJobInfo.model_validate(created_payload)
 
     assert created.job_id
     assert len(created.job_id) == 32
-    assert created.status in (JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.SUCCEEDED, JobStatus.FAILED)
+    assert created.status in (JobStatus.SUCCEEDED, JobStatus.FAILED)
+    assert created.created_at <= created.updated_at
+
+    if created.status == JobStatus.SUCCEEDED:
+        assert created.result is not None
+        assert created.error is None
+    if created.status == JobStatus.FAILED:
+        assert created.error is not None
 
     get_args: dict[str, Any] = _payload_for_tool_schema(get_tool, {"job_id": created.job_id})
     got_result: dict[str, Any] = mcp_client.call_tool(mcp_session, "get_llamator_run", arguments=get_args)
@@ -93,3 +101,4 @@ def test_mcp_create_and_get_run(
 
     assert info.job_id == created.job_id
     assert info.created_at <= info.updated_at
+    assert info.status in (JobStatus.SUCCEEDED, JobStatus.FAILED)

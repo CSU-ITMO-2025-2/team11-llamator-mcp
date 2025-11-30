@@ -19,6 +19,7 @@ from llamator_mcp_server.infra.redis import create_redis_client
 from llamator_mcp_server.infra.redis import parse_redis_settings
 from llamator_mcp_server.utils.logging import LOGGER_NAME
 from llamator_mcp_server.utils.logging import configure_logging
+from pydantic import TypeAdapter
 
 
 def _utcnow() -> datetime:
@@ -110,6 +111,16 @@ def _load_settings_with_defaults() -> Settings:
     return Settings(**data)
 
 
+_CLIENT_CONFIG_ADAPTER: TypeAdapter[Any] = TypeAdapter(ClientConfig)
+
+
+def _validate_client_config(val: Any) -> ClientConfig:
+    if not isinstance(val, dict):
+        raise ValueError("ClientConfig payload must be an object.")
+    parsed: Any = _CLIENT_CONFIG_ADAPTER.validate_python(val)
+    return parsed  # type: ignore[return-value]
+
+
 async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """
     ARQ задача: выполнить LLAMATOR тестирование.
@@ -128,27 +139,27 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
     await store.update_status(job_id, JobStatus.RUNNING)
     logger.info(f"Worker started job_id={job_id}")
 
-    attack_model: ClientConfig = ClientConfig.model_validate(payload["attack_model"])
-    tested_model: ClientConfig = ClientConfig.model_validate(payload["tested_model"])
-    judge_model: ClientConfig | None = (
-        ClientConfig.model_validate(payload["judge_model"]) if payload.get("judge_model") is not None else None
-    )
-    plan: TestPlan = TestPlan.model_validate(payload["plan"])
-    run_config: dict[str, Any] = dict(payload["run_config"])
-
-    resolved: ResolvedRun = ResolvedRun(
-            job_id=job_id,
-            attack_model=attack_model,
-            tested_model=tested_model,
-            judge_model=judge_model,
-            plan=plan,
-            run_config=run_config,
-            artifacts_root=settings.artifacts_root / job_id,
-    )
-
-    runner: LlamatorRunner = LlamatorRunner(logger=logger)
-
     try:
+        attack_model: ClientConfig = _validate_client_config(payload["attack_model"])
+        tested_model: ClientConfig = _validate_client_config(payload["tested_model"])
+        judge_model: ClientConfig | None = (
+            _validate_client_config(payload["judge_model"]) if payload.get("judge_model") is not None else None
+        )
+        plan: TestPlan = TestPlan.model_validate(payload["plan"])
+        run_config: dict[str, Any] = dict(payload["run_config"])
+
+        resolved: ResolvedRun = ResolvedRun(
+                job_id=job_id,
+                attack_model=attack_model,
+                tested_model=tested_model,
+                judge_model=judge_model,
+                plan=plan,
+                run_config=run_config,
+                artifacts_root=settings.artifacts_root / job_id,
+        )
+
+        runner: LlamatorRunner = LlamatorRunner(logger=logger)
+
         aggregated: dict[str, dict[str, int]] = await asyncio.to_thread(runner.run, resolved)
         await store.set_result(job_id, aggregated)
         logger.info(f"Worker finished job_id={job_id} status=succeeded")

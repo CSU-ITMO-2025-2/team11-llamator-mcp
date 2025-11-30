@@ -1,3 +1,4 @@
+# llamator-mcp-server/tests/conftest.py
 from __future__ import annotations
 
 import json
@@ -346,6 +347,31 @@ def _normalize_base_url(base_url: str) -> str:
     return base.rstrip("/")
 
 
+def _normalize_mcp_mount_path(mount_path: str) -> str:
+    """
+    Normalize MCP mount path for Streamable HTTP endpoint usage.
+
+    Ensures leading slash and enforces trailing slash to avoid 307 redirects
+    when calling POST endpoints on Starlette/FastAPI mounted apps.
+
+    :param mount_path: Mount path value (e.g. /mcp, mcp, /mcp/).
+    :return: Normalized mount path ending with '/' (e.g. /mcp/).
+    :raises ValueError: If mount_path is empty.
+    """
+    raw: str = str(mount_path).strip()
+    if not raw:
+        raise ValueError("mcp_path must be non-empty.")
+
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+
+    if raw == "/":
+        return "/"
+
+    normalized: str = raw.rstrip("/")
+    return f"{normalized}/"
+
+
 def _join_url(base_url: str, path: str) -> str:
     base: str = _normalize_base_url(base_url)
     p: str = path.strip()
@@ -446,7 +472,7 @@ def _service_http_port() -> int:
 
 def _service_mcp_mount_path() -> str:
     raw: str = os.environ.get(f"{SERVICE_ENV_PREFIX}MCP_MOUNT_PATH", "").strip()
-    return raw or "/mcp"
+    return _normalize_mcp_mount_path(raw or "/mcp")
 
 
 def _service_api_key() -> str | None:
