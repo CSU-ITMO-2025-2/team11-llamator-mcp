@@ -21,6 +21,7 @@ from pydantic import field_validator
 
 DEFAULT_ENV_FILE_NAME: Final[str] = ".env.test"
 ENV_PREFIX: Final[str] = "LLAMATOR_MCP_TEST_"
+SERVICE_ENV_PREFIX: Final[str] = "LLAMATOR_MCP_"
 
 
 class ArtifactsListResponse(BaseModel):
@@ -341,7 +342,7 @@ class McpJsonRpcClient:
 def _normalize_base_url(base_url: str) -> str:
     base: str = base_url.strip()
     if not base:
-        raise ValueError(f"{ENV_PREFIX}BASE_URL must be non-empty.")
+        raise ValueError("base_url must be non-empty.")
     return base.rstrip("/")
 
 
@@ -359,7 +360,7 @@ def _origin_from_base_url(base_url: str) -> str:
     parsed = urllib.parse.urlparse(_normalize_base_url(base_url))
     origin: str = f"{parsed.scheme}://{parsed.netloc}"
     if not parsed.scheme or not parsed.netloc:
-        raise ValueError(f"{ENV_PREFIX}BASE_URL must include URL scheme and host.")
+        raise ValueError("base_url must include URL scheme and host.")
     return origin
 
 
@@ -430,12 +431,36 @@ def _load_env_from_tests_file() -> None:
         os.environ.setdefault(k, v)
 
 
+def _service_http_port() -> int:
+    raw: str = os.environ.get(f"{SERVICE_ENV_PREFIX}HTTP_PORT", "").strip()
+    if not raw:
+        return 8000
+    try:
+        port: int = int(raw)
+    except ValueError as e:
+        raise ValueError(f"Invalid int for {SERVICE_ENV_PREFIX}HTTP_PORT: {raw}") from e
+    if port < 1 or port > 65535:
+        raise ValueError(f"{SERVICE_ENV_PREFIX}HTTP_PORT must be in [1, 65535].")
+    return port
+
+
+def _service_mcp_mount_path() -> str:
+    raw: str = os.environ.get(f"{SERVICE_ENV_PREFIX}MCP_MOUNT_PATH", "").strip()
+    return raw or "/mcp"
+
+
+def _service_api_key() -> str | None:
+    raw: str = os.environ.get(f"{SERVICE_ENV_PREFIX}API_KEY", "").strip()
+    return raw or None
+
+
 def _load_test_config() -> IntegrationTestConfig:
     _load_env_from_tests_file()
 
-    base_url: str = _get_env_required(f"{ENV_PREFIX}BASE_URL")
-    mcp_path: str = _get_env_required(f"{ENV_PREFIX}MCP_PATH")
-    api_key: str | None = _get_env_optional(f"{ENV_PREFIX}API_KEY")
+    port: int = _service_http_port()
+    base_url: str = _normalize_base_url(f"http://localhost:{port}")
+    mcp_path: str = _service_mcp_mount_path()
+    api_key: str | None = _service_api_key()
 
     http_timeout_s: float = _get_env_float(f"{ENV_PREFIX}HTTP_TIMEOUT_S")
     ready_timeout_s: float = _get_env_float(f"{ENV_PREFIX}READY_TIMEOUT_S")
@@ -444,7 +469,7 @@ def _load_test_config() -> IntegrationTestConfig:
     mcp_protocol_version: str = _get_env_required(f"{ENV_PREFIX}MCP_PROTOCOL_VERSION")
 
     return IntegrationTestConfig(
-            base_url=_normalize_base_url(base_url),
+            base_url=base_url,
             mcp_path=mcp_path,
             api_key=api_key,
             http_timeout_s=http_timeout_s,

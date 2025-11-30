@@ -29,33 +29,6 @@ services:
       ]
     profiles: [ "cpu" ]
 
-  #  tgi_gpu:
-  #    image: ghcr.io/huggingface/text-generation-inference:3.3.6
-  #    ports:
-  #      - "8080:80"
-  #    environment:
-  #      HF_HOME: /data/hf
-  #      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
-  #    volumes:
-  #      - hf-cache:/data
-  #    command:
-  #      [
-  #        "--model-id",
-  #        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
-  #        "--port",
-  #        "80",
-  #        "--max-input-length",
-  #        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
-  #        "--max-total-tokens",
-  #        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
-  #      ]
-  #    deploy:
-  #      resources:
-  #        reservations:
-  #          devices:
-  #            - capabilities: [ "gpu" ]
-  #    profiles: [ "gpu" ]
-
   api:
     build:
       context: .
@@ -65,16 +38,39 @@ services:
     environment:
       LLAMATOR_MCP_REDIS_DSN: ${LLAMATOR_MCP_REDIS_DSN:-redis://redis:6379/0}
       LLAMATOR_MCP_ARTIFACTS_ROOT: ${LLAMATOR_MCP_ARTIFACTS_ROOT:-/data/artifacts}
+
       LLAMATOR_MCP_AUX_OPENAI_BASE_URL: ${LLAMATOR_MCP_AUX_OPENAI_BASE_URL:-http://tgi:80/v1}
       LLAMATOR_MCP_AUX_OPENAI_MODEL: ${LLAMATOR_MCP_AUX_OPENAI_MODEL:-tgi}
       LLAMATOR_MCP_AUX_OPENAI_API_KEY: ${LLAMATOR_MCP_AUX_OPENAI_API_KEY:-dummy}
+
       LLAMATOR_MCP_API_KEY: ${LLAMATOR_MCP_API_KEY:-}
       LLAMATOR_MCP_LOG_LEVEL: ${LLAMATOR_MCP_LOG_LEVEL:-INFO}
+
+      LLAMATOR_MCP_JOB_TTL_SECONDS: ${LLAMATOR_MCP_JOB_TTL_SECONDS:-604800}
+      LLAMATOR_MCP_RUN_TIMEOUT_SECONDS: ${LLAMATOR_MCP_RUN_TIMEOUT_SECONDS:-3600}
+      LLAMATOR_MCP_REPORT_LANGUAGE: ${LLAMATOR_MCP_REPORT_LANGUAGE:-en}
+
+      LLAMATOR_MCP_HTTP_HOST: ${LLAMATOR_MCP_HTTP_HOST:-0.0.0.0}
+      LLAMATOR_MCP_HTTP_PORT: ${LLAMATOR_MCP_HTTP_PORT:-8000}
+      LLAMATOR_MCP_UVICORN_LOG_LEVEL: ${LLAMATOR_MCP_UVICORN_LOG_LEVEL:-info}
+
+      LLAMATOR_MCP_MCP_MOUNT_PATH: ${LLAMATOR_MCP_MCP_MOUNT_PATH:-/mcp}
+      LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH: ${LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH:-/}
     volumes:
       - artifacts:/data/artifacts
     ports:
-      - "8000:8000"
-    command: [ "uvicorn", "llamator_mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000" ]
+      - "${LLAMATOR_MCP_HTTP_PORT:-8000}:${LLAMATOR_MCP_HTTP_PORT:-8000}"
+    command:
+      [
+        "uvicorn",
+        "llamator_mcp_server.main:app",
+        "--host",
+        "${LLAMATOR_MCP_HTTP_HOST:-0.0.0.0}",
+        "--port",
+        "${LLAMATOR_MCP_HTTP_PORT:-8000}",
+        "--log-level",
+        "${LLAMATOR_MCP_UVICORN_LOG_LEVEL:-info}"
+      ]
 
   worker:
     build:
@@ -85,10 +81,24 @@ services:
     environment:
       LLAMATOR_MCP_REDIS_DSN: ${LLAMATOR_MCP_REDIS_DSN:-redis://redis:6379/0}
       LLAMATOR_MCP_ARTIFACTS_ROOT: ${LLAMATOR_MCP_ARTIFACTS_ROOT:-/data/artifacts}
+
       LLAMATOR_MCP_AUX_OPENAI_BASE_URL: ${LLAMATOR_MCP_AUX_OPENAI_BASE_URL:-http://tgi:80/v1}
       LLAMATOR_MCP_AUX_OPENAI_MODEL: ${LLAMATOR_MCP_AUX_OPENAI_MODEL:-tgi}
       LLAMATOR_MCP_AUX_OPENAI_API_KEY: ${LLAMATOR_MCP_AUX_OPENAI_API_KEY:-dummy}
+
       LLAMATOR_MCP_LOG_LEVEL: ${LLAMATOR_MCP_LOG_LEVEL:-INFO}
+
+      LLAMATOR_MCP_JOB_TTL_SECONDS: ${LLAMATOR_MCP_JOB_TTL_SECONDS:-604800}
+      LLAMATOR_MCP_RUN_TIMEOUT_SECONDS: ${LLAMATOR_MCP_RUN_TIMEOUT_SECONDS:-3600}
+      LLAMATOR_MCP_REPORT_LANGUAGE: ${LLAMATOR_MCP_REPORT_LANGUAGE:-en}
+
+      LLAMATOR_MCP_HTTP_HOST: ${LLAMATOR_MCP_HTTP_HOST:-0.0.0.0}
+      LLAMATOR_MCP_HTTP_PORT: ${LLAMATOR_MCP_HTTP_PORT:-8000}
+      LLAMATOR_MCP_UVICORN_LOG_LEVEL: ${LLAMATOR_MCP_UVICORN_LOG_LEVEL:-info}
+
+      LLAMATOR_MCP_MCP_MOUNT_PATH: ${LLAMATOR_MCP_MCP_MOUNT_PATH:-/mcp}
+      LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH: ${LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH:-/}
+      LLAMATOR_MCP_API_KEY: ${LLAMATOR_MCP_API_KEY:-}
     volumes:
       - artifacts:/data/artifacts
     command: [ "arq", "llamator_mcp_server.worker_settings.WorkerSettings" ]

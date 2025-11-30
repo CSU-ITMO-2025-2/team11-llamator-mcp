@@ -29,7 +29,11 @@ def build_mcp(
     :param logger: Логгер.
     :return: Экземпляр FastMCP.
     """
-    mcp: FastMCP = FastMCP(name="llamator-mcp-server", stateless_http=True, streamable_http_path="/")
+    mcp: FastMCP = FastMCP(
+            name="llamator-mcp-server",
+            stateless_http=True,
+            streamable_http_path=settings.mcp_streamable_http_path,
+    )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
     service: TestRunService = TestRunService(arq=arq, store=store, settings=settings, logger=logger)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from datetime import timezone
 from typing import Any
@@ -22,6 +23,91 @@ from llamator_mcp_server.utils.logging import configure_logging
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _get_env_optional_str(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+def _get_env_int(name: str) -> int:
+    raw: str = os.environ.get(name, "").strip()
+    if not raw:
+        raise ValueError(f"Missing required env var: {name}")
+    try:
+        return int(raw)
+    except ValueError as e:
+        raise ValueError(f"Invalid int for {name}: {raw}") from e
+
+
+def _load_settings_with_defaults() -> Settings:
+    """
+    Загрузить настройки worker-а, подставляя значения по умолчанию на уровне точки входа.
+
+    :return: Настройки приложения.
+    :raises ValueError: При некорректных значениях окружения.
+    """
+    prefix: str = "LLAMATOR_MCP_"
+
+    defaults: dict[str, object] = {
+        "redis_dsn": "redis://redis:6379/0",
+        "artifacts_root": "/data/artifacts",
+        "api_key": "",
+        "log_level": "INFO",
+        "aux_openai_base_url": "http://tgi:80/v1",
+        "aux_openai_model": "tgi",
+        "aux_openai_api_key": "dummy",
+        "job_ttl_seconds": 7 * 24 * 60 * 60,
+        "run_timeout_seconds": 60 * 60,
+        "report_language": "en",
+        "http_host": "0.0.0.0",
+        "http_port": 8000,
+        "mcp_mount_path": "/mcp",
+        "mcp_streamable_http_path": "/",
+        "uvicorn_log_level": "info",
+    }
+
+    data: dict[str, object] = {}
+
+    data["redis_dsn"] = _get_env_optional_str(f"{prefix}REDIS_DSN") or str(defaults["redis_dsn"])
+    data["artifacts_root"] = _get_env_optional_str(f"{prefix}ARTIFACTS_ROOT") or str(defaults["artifacts_root"])
+    data["api_key"] = _get_env_optional_str(f"{prefix}API_KEY") or str(defaults["api_key"])
+    data["log_level"] = _get_env_optional_str(f"{prefix}LOG_LEVEL") or str(defaults["log_level"])
+
+    data["aux_openai_base_url"] = _get_env_optional_str(f"{prefix}AUX_OPENAI_BASE_URL") or str(
+            defaults["aux_openai_base_url"]
+    )
+    data["aux_openai_model"] = _get_env_optional_str(f"{prefix}AUX_OPENAI_MODEL") or str(defaults["aux_openai_model"])
+    data["aux_openai_api_key"] = _get_env_optional_str(f"{prefix}AUX_OPENAI_API_KEY") or str(
+            defaults["aux_openai_api_key"]
+    )
+
+    if _get_env_optional_str(f"{prefix}JOB_TTL_SECONDS"):
+        data["job_ttl_seconds"] = _get_env_int(f"{prefix}JOB_TTL_SECONDS")
+    else:
+        data["job_ttl_seconds"] = defaults["job_ttl_seconds"]
+
+    if _get_env_optional_str(f"{prefix}RUN_TIMEOUT_SECONDS"):
+        data["run_timeout_seconds"] = _get_env_int(f"{prefix}RUN_TIMEOUT_SECONDS")
+    else:
+        data["run_timeout_seconds"] = defaults["run_timeout_seconds"]
+
+    data["report_language"] = _get_env_optional_str(f"{prefix}REPORT_LANGUAGE") or str(defaults["report_language"])
+
+    data["http_host"] = _get_env_optional_str(f"{prefix}HTTP_HOST") or str(defaults["http_host"])
+    if _get_env_optional_str(f"{prefix}HTTP_PORT"):
+        data["http_port"] = _get_env_int(f"{prefix}HTTP_PORT")
+    else:
+        data["http_port"] = defaults["http_port"]
+
+    data["mcp_mount_path"] = _get_env_optional_str(f"{prefix}MCP_MOUNT_PATH") or str(defaults["mcp_mount_path"])
+    data["mcp_streamable_http_path"] = _get_env_optional_str(f"{prefix}MCP_STREAMABLE_HTTP_PATH") or str(
+            defaults["mcp_streamable_http_path"]
+    )
+
+    data["uvicorn_log_level"] = _get_env_optional_str(f"{prefix}UVICORN_LOG_LEVEL") or str(
+            defaults["uvicorn_log_level"])
+
+    return Settings(**data)
 
 
 async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -82,7 +168,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     :param ctx: Контекст worker-а.
     :return: None
     """
-    settings: Settings = Settings()
+    settings: Settings = _load_settings_with_defaults()
     configure_logging(settings.log_level)
     logger: logging.Logger = logging.getLogger(LOGGER_NAME)
 
@@ -115,7 +201,7 @@ class WorkerSettings:
 
     Используется CLI командой: ``arq llamator_mcp_server.worker_settings.WorkerSettings``.
     """
-    settings: Settings = Settings()
+    settings: Settings = _load_settings_with_defaults()
     redis_settings: RedisSettings = parse_redis_settings(settings.redis_dsn)
     functions = [run_llamator_job]
     on_startup = startup
