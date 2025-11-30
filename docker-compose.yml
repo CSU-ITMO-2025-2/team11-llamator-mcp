@@ -29,32 +29,32 @@ services:
       ]
     profiles: [ "cpu" ]
 
-  tgi_gpu:
-    image: ghcr.io/huggingface/text-generation-inference:3.3.6
-    ports:
-      - "8080:80"
-    environment:
-      HF_HOME: /data/hf
-      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
-    volumes:
-      - hf-cache:/data
-    command:
-      [
-        "--model-id",
-        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
-        "--port",
-        "80",
-        "--max-input-length",
-        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
-        "--max-total-tokens",
-        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
-      ]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [ "gpu" ]
-    profiles: [ "gpu" ]
+  #  tgi_gpu:
+  #    image: ghcr.io/huggingface/text-generation-inference:3.3.6
+  #    ports:
+  #      - "8080:80"
+  #    environment:
+  #      HF_HOME: /data/hf
+  #      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+  #    volumes:
+  #      - hf-cache:/data
+  #    command:
+  #      [
+  #        "--model-id",
+  #        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
+  #        "--port",
+  #        "80",
+  #        "--max-input-length",
+  #        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
+  #        "--max-total-tokens",
+  #        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
+  #      ]
+  #    deploy:
+  #      resources:
+  #        reservations:
+  #          devices:
+  #            - capabilities: [ "gpu" ]
+  #    profiles: [ "gpu" ]
 
   api:
     build:

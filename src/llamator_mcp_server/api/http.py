@@ -22,7 +22,12 @@ from .security import require_api_key
 
 
 def _safe_join(root: Path, *parts: str) -> Path:
-    candidate: Path = (root.joinpath(*parts)).resolve()
+    """
+    Безопасно соединить корневой путь с относительным.
+
+    Генерирует абсолютный путь и проверяет, что он лежит внутри корня.
+    """
+    candidate: Path = (root.joinpath(*parts)).resolve(strict=False)
     root_resolved: Path = root.resolve()
     if root_resolved not in candidate.parents and candidate != root_resolved:
         raise ValueError("Unsafe path.")
@@ -30,6 +35,11 @@ def _safe_join(root: Path, *parts: str) -> Path:
 
 
 def _list_files(root: Path) -> list[dict[str, Any]]:
+    """
+    Получить список всех файлов в заданной корневой директории.
+
+    Возвращает информацию о каждом файле: относительный путь, размер, время изменения.
+    """
     results: list[dict[str, Any]] = []
     for dirpath, _, filenames in os.walk(root):
         for name in filenames:
@@ -71,9 +81,13 @@ def build_router(
 
         :param req: Запрос запуска.
         :return: Ответ с job_id.
-        :raises HTTPException: При ошибке валидации.
+        :raises HTTPException: При ошибке валидации входных данных.
         """
-        validate_test_specs(req.plan.basic_tests)
+        try:
+            validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
+        except ValueError as e:
+            logger.warning(f"Validation error in create_run: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         result = await service.submit(req)
         return LlamatorTestRunResponse(job_id=result.job_id, status=result.status, created_at=result.created_at)
 
@@ -84,7 +98,7 @@ def build_router(
 
         :param job_id: Идентификатор задания.
         :return: Состояние задания.
-        :raises HTTPException: Если не найдено.
+        :raises HTTPException: Если задание не найдено.
         """
         try:
             return await store.get(job_id)
@@ -97,8 +111,8 @@ def build_router(
         Получить список файлов артефактов по заданию.
 
         :param job_id: Идентификатор задания.
-        :return: Список файлов.
-        :raises HTTPException: Если не найдено.
+        :return: Список файлов (путь, размер, mtime).
+        :raises HTTPException: Если задание не найдено.
         """
         try:
             await store.get(job_id)
@@ -117,7 +131,7 @@ def build_router(
 
         :param job_id: Идентификатор задания.
         :param path: Относительный путь файла внутри артефактов задания.
-        :return: FileResponse.
+        :return: Ответ с файлом (FileResponse).
         :raises HTTPException: Если файл не найден или путь небезопасен.
         """
         try:
@@ -141,7 +155,7 @@ def build_router(
         """
         Проверка здоровья сервиса.
 
-        :return: Статус.
+        :return: Статус сервера.
         """
         return {"status": "ok"}
 

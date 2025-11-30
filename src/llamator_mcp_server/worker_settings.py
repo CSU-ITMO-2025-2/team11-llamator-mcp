@@ -50,7 +50,6 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
     plan: TestPlan = TestPlan.model_validate(payload["plan"])
     run_config: dict[str, Any] = dict(payload["run_config"])
 
-    artifacts_root: str = str((settings.artifacts_root / job_id).resolve())
     resolved: ResolvedRun = ResolvedRun(
             job_id=job_id,
             attack_model=attack_model,
@@ -116,7 +115,6 @@ class WorkerSettings:
 
     Используется CLI командой: ``arq llamator_mcp_server.worker_settings.WorkerSettings``.
     """
-
     settings: Settings = Settings()
     redis_settings: RedisSettings = parse_redis_settings(settings.redis_dsn)
     functions = [run_llamator_job]

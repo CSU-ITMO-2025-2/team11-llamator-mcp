@@ -28,11 +28,7 @@ class JobStore:
         self._redis: Redis = redis
         self._ttl_seconds: int = ttl_seconds
 
-    async def create(
-            self,
-            job_id: str,
-            request_redacted: dict[str, object],
-    ) -> LlamatorJobInfo:
+    async def create(self, job_id: str, request_redacted: dict[str, object]) -> LlamatorJobInfo:
         """
         Создать запись задания.
 
@@ -115,6 +111,9 @@ class JobStore:
         return LlamatorJobInfo.model_validate(payload)
 
     async def _set(self, job_id: str, info: LlamatorJobInfo) -> None:
+        """
+        Внутренний метод: сохранить состояние задания в Redis.
+        """
         key: str = self._key(job_id)
         raw: str = info.model_dump_json()
         await self._redis.set(key, raw, ex=self._ttl_seconds)

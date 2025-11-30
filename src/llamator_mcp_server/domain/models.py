@@ -8,6 +8,7 @@ from typing import Literal
 from typing import Union
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import HttpUrl
 from pydantic import field_validator
@@ -23,7 +24,6 @@ class JobStatus(str, Enum):
     :cvar SUCCEEDED: Задание завершилось успешно.
     :cvar FAILED: Задание завершилось ошибкой.
     """
-
     QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -37,7 +37,6 @@ class ClientKind(str, Enum):
     :cvar OPENAI: OpenAI-совместимый API.
     :cvar LANGCHAIN: LangChain backend.
     """
-
     OPENAI = "openai"
     LANGCHAIN = "langchain"
 
@@ -50,7 +49,7 @@ class TestParameter(BaseModel):
     :param value: Значение параметра (JSON-совместимое).
     :raises ValueError: Если имя пустое.
     """
-
+    model_config = ConfigDict(frozen=True)
     name: str = Field(min_length=1, max_length=200)
     value: object
 
@@ -71,7 +70,7 @@ class BasicTestSpec(BaseModel):
     :param params: Параметры атаки.
     :raises ValueError: Если code_name пустое.
     """
-
+    model_config = ConfigDict(frozen=True)
     code_name: str = Field(min_length=1, max_length=200)
     params: tuple[TestParameter, ...] = Field(default_factory=tuple)
 
@@ -94,7 +93,7 @@ class CustomTestSpec(BaseModel):
     :param params: Параметры теста.
     :raises ValueError: Если import_path пустой или не соответствует политике импортов.
     """
-
+    model_config = ConfigDict(frozen=True)
     import_path: str = Field(min_length=1, max_length=500)
     params: tuple[TestParameter, ...] = Field(default_factory=tuple)
 
@@ -121,7 +120,7 @@ class LlamatorRunConfig(BaseModel):
     :param report_language: Язык отчёта (en/ru).
     :raises ValueError: При некорректных значениях.
     """
-
+    model_config = ConfigDict(frozen=True)
     enable_logging: bool | None = None
     enable_reports: bool | None = None
     artifacts_path: str | None = None
@@ -161,7 +160,7 @@ class OpenAIClientConfig(BaseModel):
     :param model_description: Описание модели.
     :raises ValueError: При некорректных значениях.
     """
-
+    model_config = ConfigDict(frozen=True)
     kind: Literal[ClientKind.OPENAI] = Field(default=ClientKind.OPENAI)
     api_key: str | None = Field(default=None, min_length=1)
     base_url: HttpUrl
@@ -201,7 +200,7 @@ class LangChainClientConfig(BaseModel):
     :param model_description: Описание модели.
     :raises ValueError: При некорректных значениях.
     """
-
+    model_config = ConfigDict(frozen=True)
     kind: Literal[ClientKind.LANGCHAIN] = Field(default=ClientKind.LANGCHAIN)
     backend: str = Field(min_length=1, max_length=200)
     init_params: tuple[TestParameter, ...] = Field(default_factory=tuple)
@@ -232,7 +231,7 @@ class TestPlan(BaseModel):
     :param custom_tests: Явный список пользовательских тестов (по import_path).
     :raises ValueError: При некорректной комбинации параметров.
     """
-
+    model_config = ConfigDict(frozen=True)
     preset_name: str | None = None
     num_threads: int | None = None
     basic_tests: tuple[BasicTestSpec, ...] | None = None
@@ -258,7 +257,7 @@ class LlamatorTestRunRequest(BaseModel):
     :param plan: План тестирования.
     :raises ValueError: При некорректных данных.
     """
-
+    model_config = ConfigDict(frozen=True)
     tested_model: ClientConfig
     attack_model: ClientConfig | None = None
     judge_model: ClientConfig | None = None
@@ -274,7 +273,7 @@ class LlamatorTestRunResponse(BaseModel):
     :param status: Текущий статус.
     :param created_at: Время создания.
     """
-
+    model_config = ConfigDict(frozen=True)
     job_id: str
     status: JobStatus
     created_at: datetime
@@ -288,7 +287,7 @@ class LlamatorJobError(BaseModel):
     :param message: Сообщение.
     :param occurred_at: Время фиксации ошибки.
     """
-
+    model_config = ConfigDict(frozen=True)
     error_type: str
     message: str
     occurred_at: datetime
@@ -301,7 +300,7 @@ class LlamatorJobResult(BaseModel):
     :param aggregated: Агрегированные результаты по атакам.
     :param finished_at: Время завершения.
     """
-
+    model_config = ConfigDict(frozen=True)
     aggregated: dict[str, dict[str, int]]
     finished_at: datetime
 
@@ -318,7 +317,7 @@ class LlamatorJobInfo(BaseModel):
     :param result: Результат (если есть).
     :param error: Ошибка (если есть).
     """
-
+    model_config = ConfigDict(frozen=True)
     job_id: str
     status: JobStatus
     created_at: datetime

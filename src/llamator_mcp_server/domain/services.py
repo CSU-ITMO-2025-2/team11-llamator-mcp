@@ -12,6 +12,7 @@ from arq.connections import ArqRedis
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import BasicTestSpec
 from llamator_mcp_server.domain.models import ClientConfig
+from llamator_mcp_server.domain.models import CustomTestSpec
 from llamator_mcp_server.domain.models import JobStatus
 from llamator_mcp_server.domain.models import LangChainClientConfig
 from llamator_mcp_server.domain.models import LlamatorRunConfig
@@ -22,10 +23,18 @@ from llamator_mcp_server.infra.job_store import JobStore
 
 
 def _utcnow() -> datetime:
+    """
+    Получить текущий момент времени в UTC.
+    """
     return datetime.now(timezone.utc)
 
 
 def _redact_client(cfg: ClientConfig) -> dict[str, Any]:
+    """
+    Отфильтровать чувствительные данные клиента LLM для хранения/вывода.
+
+    Заменяет секретные поля на маркеры или признаки их наличия.
+    """
     if isinstance(cfg, OpenAIClientConfig):
         return {
             "kind": "openai",
@@ -48,6 +57,11 @@ def _redact_client(cfg: ClientConfig) -> dict[str, Any]:
 
 
 def _redact_request(req: LlamatorTestRunRequest, attack: ClientConfig, judge: ClientConfig | None) -> dict[str, Any]:
+    """
+    Отфильтровать конфиденциальные данные в запросе тестирования перед сохранением.
+
+    Возвращает словарь с информацией о тестируемой модели, моделях-атакере/судье, конфигурации запуска и плане тестирования.
+    """
     plan: dict[str, Any] = {
         "preset_name": req.plan.preset_name,
         "num_threads": req.plan.num_threads,
@@ -70,6 +84,11 @@ def _redact_request(req: LlamatorTestRunRequest, attack: ClientConfig, judge: Cl
 
 
 def _ensure_safe_relative_artifacts_path(relative_path: str) -> str:
+    """
+    Проверить и нормализовать относительный путь для артефактов.
+
+    Запрещает абсолютные и выходящие за пределы разрешённого корня пути.
+    """
     p = Path(relative_path)
     if p.is_absolute() or ".." in p.parts:
         raise ValueError("artifacts_path must be a safe relative path.")
@@ -77,8 +96,12 @@ def _ensure_safe_relative_artifacts_path(relative_path: str) -> str:
 
 
 def _build_default_aux_client(settings: Settings) -> OpenAIClientConfig:
+    """
+    Построить конфигурацию клиента LLM по умолчанию для атакера/судьи на основе настроек.
+    """
+    api_key_val = settings.aux_openai_api_key or None
     return OpenAIClientConfig(
-            api_key=settings.aux_openai_api_key,
+            api_key=api_key_val,
             base_url=settings.aux_openai_base_url,
             model=settings.aux_openai_model,
             temperature=0.1,
@@ -92,9 +115,15 @@ def _merge_run_config(
         job_id: str,
         user_cfg: LlamatorRunConfig | None,
 ) -> dict[str, Any]:
+    """
+    Объединить конфигурацию запуска от пользователя с настройками по умолчанию.
+
+    Формирует полную конфигурацию запуска LLAMATOR.
+    """
     effective: dict[str, Any] = {}
     artifacts_rel: str = user_cfg.artifacts_path if (
-                user_cfg is not None and user_cfg.artifacts_path is not None) else job_id
+            user_cfg is not None and user_cfg.artifacts_path is not None
+    ) else job_id
     artifacts_rel = _ensure_safe_relative_artifacts_path(artifacts_rel)
 
     enable_logging: bool = True if user_cfg is None or user_cfg.enable_logging is None else bool(
@@ -121,7 +150,6 @@ class SubmitResult:
     :param created_at: Время создания.
     :param status: Статус.
     """
-
     job_id: str
     created_at: datetime
     status: JobStatus
@@ -192,15 +220,21 @@ def validate_unique_param_names(params: tuple[TestParameter, ...]) -> None:
         names.add(p.name)
 
 
-def validate_test_specs(basic_tests: tuple[BasicTestSpec, ...] | None) -> None:
+def validate_test_specs(
+        basic_tests: tuple[BasicTestSpec, ...] | None,
+        custom_tests: tuple[CustomTestSpec, ...] | None = None
+) -> None:
     """
-    Базовая валидация списка тестов.
+    Базовая валидация списков тестов.
 
-    :param basic_tests: Список тестов.
+    :param basic_tests: Список базовых тестов (может быть None).
+    :param custom_tests: Список пользовательских тестов (может быть None).
     :return: None
-    :raises ValueError: Если параметры некорректны.
+    :raises ValueError: Если параметры тестов некорректны (например, повторяются имена параметров).
     """
-    if basic_tests is None:
-        return
-    for t in basic_tests:
-        validate_unique_param_names(t.params)
+    if basic_tests is not None:
+        for t in basic_tests:
+            validate_unique_param_names(t.params)
+    if custom_tests is not None:
+        for t in custom_tests:
+            validate_unique_param_names(t.params)

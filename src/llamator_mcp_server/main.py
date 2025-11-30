@@ -51,9 +51,6 @@ _settings = Settings()
 configure_logging(_settings.log_level)
 _logger: logging.Logger = logging.getLogger(LOGGER_NAME)
 
-_redis: Redis = create_redis_client(_settings.redis_dsn)
-_arq: ArqRedis
-
 
 @app.on_event("startup")
 async def _startup_bindings() -> None:
@@ -62,9 +59,6 @@ async def _startup_bindings() -> None:
 
     :return: None
     """
-    global _arq  # noqa: PLW0603
-    _arq = app.state.arq  # type: ignore[attr-defined]
-
     router = build_router(settings=app.state.settings, redis=app.state.redis, arq=app.state.arq,
                           logger=app.state.logger)
     app.include_router(router)

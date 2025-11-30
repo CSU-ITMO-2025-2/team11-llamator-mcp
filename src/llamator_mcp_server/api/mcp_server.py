@@ -43,7 +43,7 @@ def build_mcp(
         :return: Ответ с job_id.
         :raises ValueError: При некорректных данных.
         """
-        validate_test_specs(req.plan.basic_tests)
+        validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
         result = await service.submit(req)
         return LlamatorTestRunResponse(job_id=result.job_id, status=result.status, created_at=result.created_at)
 
@@ -54,7 +54,7 @@ def build_mcp(
 
         :param job_id: Идентификатор задания.
         :return: Статус и результаты (если доступны).
-        :raises KeyError: Если задания нет.
+        :raises KeyError: Если задание не найдено.
         """
         return await store.get(job_id)
 
