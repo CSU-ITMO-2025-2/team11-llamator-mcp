@@ -11,13 +11,9 @@ from pathlib import Path
 from typing import Any
 from typing import Iterator
 
-from llamator.client.specific_chat_clients import ClientLangChain
-from llamator.client.specific_chat_clients import ClientOpenAI
-from llamator.main import start_testing
-from llamator.utils.test_presets import get_test_preset
+import llamator
+
 from llamator_mcp_server.domain.models import BasicTestSpec
-from llamator_mcp_server.domain.models import ClientConfig
-from llamator_mcp_server.domain.models import LangChainClientConfig
 from llamator_mcp_server.domain.models import OpenAIClientConfig
 from llamator_mcp_server.domain.models import TestParameter
 from llamator_mcp_server.domain.models import TestPlan
@@ -38,9 +34,9 @@ class ResolvedRun:
     """
 
     job_id: str
-    attack_model: ClientConfig
-    tested_model: ClientConfig
-    judge_model: ClientConfig | None
+    attack_model: OpenAIClientConfig
+    tested_model: OpenAIClientConfig
+    judge_model: OpenAIClientConfig
     plan: TestPlan
     run_config: dict[str, Any]
     artifacts_root: Path
@@ -50,36 +46,24 @@ def _params_to_dict(params: tuple[TestParameter, ...]) -> dict[str, Any]:
     return {p.name: p.value for p in params}
 
 
-def _build_client(cfg: ClientConfig) -> Any:
-    if isinstance(cfg, OpenAIClientConfig):
-        api_key: str = cfg.api_key or ""
-        temperature: float = cfg.temperature if cfg.temperature is not None else 0.1
-        return ClientOpenAI(
-                api_key=api_key,
-                base_url=str(cfg.base_url),
-                model=cfg.model,
-                temperature=temperature,
-                system_prompts=list(cfg.system_prompts) if cfg.system_prompts is not None else None,
-                model_description=cfg.model_description,
-        )
-
-    if isinstance(cfg, LangChainClientConfig):
-        kwargs: dict[str, Any] = _params_to_dict(cfg.init_params)
-        return ClientLangChain(
-                backend=cfg.backend,
-                system_prompts=list(cfg.system_prompts) if cfg.system_prompts is not None else None,
-                model_description=cfg.model_description,
-                **kwargs,
-        )
-
-    raise TypeError(f"Unsupported client kind: {type(cfg)}")
+def _build_client(cfg: OpenAIClientConfig) -> Any:
+    api_key: str = cfg.api_key or ""
+    temperature: float = cfg.temperature if cfg.temperature is not None else 0.1
+    return llamator.ClientOpenAI(
+            api_key=api_key,
+            base_url=str(cfg.base_url),
+            model=cfg.model,
+            temperature=temperature,
+            system_prompts=list(cfg.system_prompts) if cfg.system_prompts is not None else None,
+            model_description=cfg.model_description,
+    )
 
 
 def _resolve_basic_tests(plan: TestPlan) -> list[tuple[str, dict[str, Any]]] | None:
     tests: list[tuple[str, dict[str, Any]]] = []
 
     if plan.preset_name is not None:
-        preset_tests: list[tuple[str, dict[str, Any]]] = get_test_preset(plan.preset_name.strip())
+        preset_tests: list[tuple[str, dict[str, Any]]] = llamator.get_test_preset(plan.preset_name.strip())
         tests.extend(preset_tests)
 
     if plan.basic_tests is not None:
@@ -146,7 +130,7 @@ class LlamatorRunner:
 
         attack_model = _build_client(resolved.attack_model)
         tested_model = _build_client(resolved.tested_model)
-        judge_model = _build_client(resolved.judge_model) if resolved.judge_model is not None else None
+        judge_model = _build_client(resolved.judge_model)
 
         basic_tests = _resolve_basic_tests(resolved.plan)
         custom_tests = _resolve_custom_tests(resolved.plan)
@@ -155,7 +139,7 @@ class LlamatorRunner:
         self._logger.info(f"Starting LLAMATOR run for job_id={resolved.job_id}")
 
         with _silence_external_output():
-            return start_testing(
+            return llamator.start_testing(
                     attack_model=attack_model,
                     tested_model=tested_model,
                     config=resolved.run_config,

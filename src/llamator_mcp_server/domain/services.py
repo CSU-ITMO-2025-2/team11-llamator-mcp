@@ -1,3 +1,4 @@
+# llamator-mcp-server/src/llamator_mcp_server/domain/services.py
 from __future__ import annotations
 
 import logging
@@ -9,12 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from arq.connections import ArqRedis
+
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import BasicTestSpec
-from llamator_mcp_server.domain.models import ClientConfig
 from llamator_mcp_server.domain.models import CustomTestSpec
 from llamator_mcp_server.domain.models import JobStatus
-from llamator_mcp_server.domain.models import LangChainClientConfig
 from llamator_mcp_server.domain.models import LlamatorRunConfig
 from llamator_mcp_server.domain.models import LlamatorTestRunRequest
 from llamator_mcp_server.domain.models import OpenAIClientConfig
@@ -29,34 +29,28 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _redact_client(cfg: ClientConfig) -> dict[str, Any]:
+def _redact_client(cfg: OpenAIClientConfig) -> dict[str, Any]:
     """
     Отфильтровать чувствительные данные клиента LLM для хранения/вывода.
 
     Заменяет секретные поля на маркеры или признаки их наличия.
     """
-    if isinstance(cfg, OpenAIClientConfig):
-        return {
-            "kind": "openai",
-            "base_url": str(cfg.base_url),
-            "model": cfg.model,
-            "temperature": cfg.temperature,
-            "system_prompts": list(cfg.system_prompts) if cfg.system_prompts is not None else None,
-            "model_description": cfg.model_description,
-            "api_key_present": bool(cfg.api_key),
-        }
-    if isinstance(cfg, LangChainClientConfig):
-        return {
-            "kind": "langchain",
-            "backend": cfg.backend,
-            "system_prompts": list(cfg.system_prompts) if cfg.system_prompts is not None else None,
-            "model_description": cfg.model_description,
-            "init_params": [{"name": p.name, "value": "<redacted>"} for p in cfg.init_params],
-        }
-    return {"kind": "unknown"}
+    return {
+        "kind": "openai",
+        "base_url": str(cfg.base_url),
+        "model": cfg.model,
+        "temperature": cfg.temperature,
+        "system_prompts": list(cfg.system_prompts) if cfg.system_prompts is not None else None,
+        "model_description": cfg.model_description,
+        "api_key_present": bool(cfg.api_key),
+    }
 
 
-def _redact_request(req: LlamatorTestRunRequest, attack: ClientConfig, judge: ClientConfig | None) -> dict[str, Any]:
+def _redact_request(
+        req: LlamatorTestRunRequest,
+        attack: OpenAIClientConfig,
+        judge: OpenAIClientConfig,
+) -> dict[str, Any]:
     """
     Отфильтровать конфиденциальные данные в запросе тестирования перед сохранением.
 
@@ -77,7 +71,7 @@ def _redact_request(req: LlamatorTestRunRequest, attack: ClientConfig, judge: Cl
     return {
         "tested_model": _redact_client(req.tested_model),
         "attack_model": _redact_client(attack),
-        "judge_model": _redact_client(judge) if judge is not None else None,
+        "judge_model": _redact_client(judge),
         "run_config": (req.run_config.model_dump() if req.run_config is not None else None),
         "plan": plan,
     }
@@ -95,18 +89,41 @@ def _ensure_safe_relative_artifacts_path(relative_path: str) -> str:
     return str(p.as_posix())
 
 
-def _build_default_aux_client(settings: Settings) -> OpenAIClientConfig:
+def _build_attack_client(settings: Settings) -> OpenAIClientConfig:
     """
-    Построить конфигурацию клиента LLM по умолчанию для атакера/судьи на основе настроек.
+    Build an attack model configuration from environment-backed settings.
+
+    :param settings: Application settings.
+    :return: OpenAIClientConfig for attack LLM.
+    :raises ValueError: If settings are invalid.
     """
-    api_key_val = settings.aux_openai_api_key or None
+    api_key_val: str | None = settings.attack_openai_api_key or None
     return OpenAIClientConfig(
             api_key=api_key_val,
-            base_url=settings.aux_openai_base_url,
-            model=settings.aux_openai_model,
-            temperature=0.1,
-            system_prompts=None,
-            model_description="Auxiliary LLM for LLAMATOR (attack/judge default).",
+            base_url=settings.attack_openai_base_url,
+            model=settings.attack_openai_model,
+            temperature=settings.attack_openai_temperature,
+            system_prompts=settings.attack_openai_system_prompts,
+            model_description=None,
+    )
+
+
+def _build_judge_client(settings: Settings) -> OpenAIClientConfig:
+    """
+    Build a judge model configuration from environment-backed settings.
+
+    :param settings: Application settings.
+    :return: OpenAIClientConfig for judge LLM.
+    :raises ValueError: If settings are invalid.
+    """
+    api_key_val: str | None = settings.judge_openai_api_key or None
+    return OpenAIClientConfig(
+            api_key=api_key_val,
+            base_url=settings.judge_openai_base_url,
+            model=settings.judge_openai_model,
+            temperature=settings.judge_openai_temperature,
+            system_prompts=settings.judge_openai_system_prompts,
+            model_description=None,
     )
 
 
@@ -181,10 +198,8 @@ class TestRunService:
         """
         job_id: str = uuid.uuid4().hex
 
-        attack: ClientConfig = req.attack_model if req.attack_model is not None else _build_default_aux_client(
-            self._settings)
-        judge: ClientConfig | None = req.judge_model if req.judge_model is not None else _build_default_aux_client(
-            self._settings)
+        attack: OpenAIClientConfig = _build_attack_client(self._settings)
+        judge: OpenAIClientConfig = _build_judge_client(self._settings)
         run_config: dict[str, Any] = _merge_run_config(self._settings, job_id, req.run_config)
 
         request_redacted: dict[str, Any] = _redact_request(req, attack=attack, judge=judge)
@@ -195,7 +210,7 @@ class TestRunService:
             "created_at": _utcnow().isoformat(),
             "attack_model": attack.model_dump(mode="json"),
             "tested_model": req.tested_model.model_dump(mode="json"),
-            "judge_model": judge.model_dump(mode="json") if judge is not None else None,
+            "judge_model": judge.model_dump(mode="json"),
             "plan": req.plan.model_dump(mode="json"),
             "run_config": run_config,
         }
@@ -222,7 +237,7 @@ def validate_unique_param_names(params: tuple[TestParameter, ...]) -> None:
 
 def validate_test_specs(
         basic_tests: tuple[BasicTestSpec, ...] | None,
-        custom_tests: tuple[CustomTestSpec, ...] | None = None
+        custom_tests: tuple[CustomTestSpec, ...] | None = None,
 ) -> None:
     """
     Базовая валидация списков тестов.

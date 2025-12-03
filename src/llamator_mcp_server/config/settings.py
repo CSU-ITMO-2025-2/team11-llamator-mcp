@@ -1,3 +1,4 @@
+# llamator-mcp-server/src/llamator_mcp_server/config/settings.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -42,9 +43,17 @@ class Settings(BaseSettings):
     api_key: str = Field(max_length=500)
     log_level: str = Field(min_length=1, max_length=50)
 
-    aux_openai_base_url: str = Field(min_length=1, max_length=2000)
-    aux_openai_model: str = Field(min_length=1, max_length=300)
-    aux_openai_api_key: str = Field(max_length=1000)
+    attack_openai_base_url: str = Field(min_length=1, max_length=2000)
+    attack_openai_model: str = Field(min_length=1, max_length=300)
+    attack_openai_api_key: str = Field(max_length=1000)
+    attack_openai_temperature: float = Field(ge=0.0, le=2.0)
+    attack_openai_system_prompts: tuple[str, ...] | None
+
+    judge_openai_base_url: str = Field(min_length=1, max_length=2000)
+    judge_openai_model: str = Field(min_length=1, max_length=300)
+    judge_openai_api_key: str = Field(max_length=1000)
+    judge_openai_temperature: float = Field(ge=0.0, le=2.0)
+    judge_openai_system_prompts: tuple[str, ...] | None
 
     job_ttl_seconds: int = Field(ge=1)
     run_timeout_seconds: int = Field(ge=1)
@@ -62,8 +71,10 @@ class Settings(BaseSettings):
     @field_validator(
             "redis_dsn",
             "log_level",
-            "aux_openai_base_url",
-            "aux_openai_model",
+            "attack_openai_base_url",
+            "attack_openai_model",
+            "judge_openai_base_url",
+            "judge_openai_model",
             "http_host",
             "uvicorn_log_level",
     )
@@ -74,10 +85,20 @@ class Settings(BaseSettings):
             raise ValueError("Value must be non-empty.")
         return val
 
-    @field_validator("api_key", "aux_openai_api_key")
+    @field_validator("api_key", "attack_openai_api_key", "judge_openai_api_key")
     @classmethod
     def _strip_optional_secret(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("attack_openai_system_prompts", "judge_openai_system_prompts")
+    @classmethod
+    def _validate_system_prompts(cls, v: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if v is None:
+            return None
+        cleaned: list[str] = [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        if not cleaned:
+            return None
+        return tuple(cleaned)
 
     @field_validator("mcp_mount_path", "mcp_streamable_http_path")
     @classmethod

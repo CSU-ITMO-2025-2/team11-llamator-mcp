@@ -6,6 +6,9 @@ import logging
 from typing import Final
 
 from arq.connections import ArqRedis
+from mcp.server.fastmcp import FastMCP
+from redis.asyncio import Redis
+
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import JobStatus
 from llamator_mcp_server.domain.models import LlamatorJobInfo
@@ -13,8 +16,6 @@ from llamator_mcp_server.domain.models import LlamatorTestRunRequest
 from llamator_mcp_server.domain.services import TestRunService
 from llamator_mcp_server.domain.services import validate_test_specs
 from llamator_mcp_server.infra.job_store import JobStore
-from mcp.server.fastmcp import FastMCP
-from redis.asyncio import Redis
 
 
 def _is_terminal_status(status: JobStatus) -> bool:
@@ -53,6 +54,20 @@ async def _await_job_completion(
         await asyncio.sleep(sleep_for)
 
 
+def _extract_aggregated_result(info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
+    if info.status == JobStatus.SUCCEEDED:
+        if info.result is None:
+            raise RuntimeError("Job succeeded but result is missing.")
+        return dict(info.result.aggregated)
+
+    if info.status == JobStatus.FAILED:
+        if info.error is None:
+            raise RuntimeError("Job failed but error is missing.")
+        raise RuntimeError(f"Job failed: {info.error.error_type}: {info.error.message}")
+
+    raise ValueError(f"Job not finished: {info.status.value}")
+
+
 def build_mcp(
         settings: Settings,
         redis: Redis,
@@ -78,7 +93,7 @@ def build_mcp(
     service: TestRunService = TestRunService(arq=arq, store=store, settings=settings, logger=logger)
 
     @mcp.tool()
-    async def create_llamator_run(req: LlamatorTestRunRequest) -> LlamatorJobInfo:
+    async def create_llamator_run(req: LlamatorTestRunRequest) -> dict[str, dict[str, int]]:
         """
         Создать задание на тестирование LLM endpoint-а через LLAMATOR и вернуть финальный результат.
 
@@ -91,14 +106,15 @@ def build_mcp(
         validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
         submitted = await service.submit(req)
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
-        return await _await_job_completion(
+        info: LlamatorJobInfo = await _await_job_completion(
                 store=store,
                 job_id=submitted.job_id,
                 timeout_seconds=settings.run_timeout_seconds,
         )
+        return _extract_aggregated_result(info)
 
     @mcp.tool()
-    async def get_llamator_run(job_id: str) -> LlamatorJobInfo:
+    async def get_llamator_run(job_id: str) -> dict[str, dict[str, int]]:
         """
         Получить состояние задания LLAMATOR.
 
@@ -106,6 +122,7 @@ def build_mcp(
         :return: Статус и результаты (если доступны).
         :raises KeyError: Если задание не найдено.
         """
-        return await store.get(job_id)
+        info: LlamatorJobInfo = await store.get(job_id)
+        return _extract_aggregated_result(info)
 
     return mcp
