@@ -1,8 +1,10 @@
 # llamator-mcp-server/src/llamator_mcp_server/api/mcp_server.py
+# llamator-mcp-server/src/llamator_mcp_server/api/mcp_server.py
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 from typing import Final
 
 from arq.connections import ArqRedis
@@ -20,6 +22,33 @@ from llamator_mcp_server.infra.job_store import JobStore
 
 def _is_terminal_status(status: JobStatus) -> bool:
     return status in (JobStatus.SUCCEEDED, JobStatus.FAILED)
+
+
+def _safe_log_request(req: LlamatorTestRunRequest) -> dict[str, Any]:
+    """
+    Build a safe-to-log representation of LlamatorTestRunRequest.
+
+    The function removes secrets (API keys) and keeps only a boolean marker
+    indicating whether a key was provided.
+
+    :param req: Incoming request model.
+    :return: JSON-serializable safe payload for logs.
+    """
+    tested = req.tested_model
+    tested_safe: dict[str, Any] = {
+        "kind": "openai",
+        "base_url": str(tested.base_url),
+        "model": tested.model,
+        "temperature": tested.temperature,
+        "system_prompts": list(tested.system_prompts) if tested.system_prompts is not None else None,
+        "model_description": tested.model_description,
+        "api_key_present": bool(tested.api_key),
+    }
+    return {
+        "tested_model": tested_safe,
+        "run_config": req.run_config.model_dump(mode="json") if req.run_config is not None else None,
+        "plan": req.plan.model_dump(mode="json"),
+    }
 
 
 async def _await_job_completion(
@@ -87,6 +116,7 @@ def build_mcp(
             name="llamator-mcp-server",
             stateless_http=True,
             streamable_http_path=settings.mcp_streamable_http_path,
+            json_response=True,
     )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
@@ -103,8 +133,12 @@ def build_mcp(
         :raises TimeoutError: Если выполнение не завершилось за таймаут.
         :raises KeyError: Если задание не найдено (неожиданно для только что созданного).
         """
+        logger.info(f"Received MCP create_llamator_run parameters: {_safe_log_request(req)}")
         validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
+
         submitted = await service.submit(req)
+        logger.info(f"Enqueued LLAMATOR job via MCP job_id={submitted.job_id}")
+
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
         info: LlamatorJobInfo = await _await_job_completion(
                 store=store,

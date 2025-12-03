@@ -1,8 +1,11 @@
 # llamator-mcp-server/tests/integration/test_mcp_api.py
+# llamator-mcp-server/tests/integration/test_mcp_api.py
 from __future__ import annotations
 
 import json
 from typing import Any
+
+import pytest
 
 from tests.conftest import McpJsonRpcClient
 from tests.conftest import McpSession
@@ -52,9 +55,12 @@ def _payload_for_tool_schema(tool: dict[str, Any], payload: dict[str, Any]) -> d
 
 def _assert_start_testing_result_schema(payload: Any) -> None:
     assert isinstance(payload, dict), f"Expected dict, got {type(payload)}"
+    assert payload, "Expected non-empty start_testing result dict."
+
     for k, v in payload.items():
         assert isinstance(k, str), f"Expected str key, got {type(k)}"
         assert isinstance(v, dict), f"Expected dict value, got {type(v)}"
+        assert v, f"Expected non-empty inner dict for key={k!r}"
         for k2, v2 in v.items():
             assert isinstance(k2, str), f"Expected str inner key, got {type(k2)}"
             assert isinstance(v2, int), f"Expected int inner value, got {type(v2)}"
@@ -72,6 +78,7 @@ def test_mcp_create_run_returns_start_testing_result(
         mcp_client: McpJsonRpcClient,
         mcp_session: McpSession,
         minimal_run_request_payload: dict[str, Any],
+        capsys: pytest.CaptureFixture[str],
 ) -> None:
     tools: list[dict[str, Any]] = mcp_client.list_tools(mcp_session)
     tool_map: dict[str, dict[str, Any]] = {str(t.get("name")): t for t in tools if isinstance(t.get("name"), str)}
@@ -83,6 +90,14 @@ def test_mcp_create_run_returns_start_testing_result(
 
     created_struct: dict[str, Any] | None = _extract_structured(created_result)
     created_fallback: dict[str, Any] | None = _extract_text_json_from_content(created_result)
+
+    assert created_struct is not None or created_fallback is not None, (
+        f"Tool result does not contain structuredContent or JSON text content: {created_result!r}"
+    )
+
     created_payload: dict[str, Any] = created_struct or created_fallback or {}
 
     _assert_start_testing_result_schema(created_payload)
+
+    with capsys.disabled():
+        print(json.dumps(created_payload, ensure_ascii=False, indent=2, sort_keys=True))
