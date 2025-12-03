@@ -1,15 +1,11 @@
-# llamator-mcp-server/src/llamator_mcp_server/infra/llamator_runner.py
 from __future__ import annotations
 
-import contextlib
 import importlib
 import inspect
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from typing import Iterator
 
 import llamator
 
@@ -94,19 +90,6 @@ def _resolve_custom_tests(plan: TestPlan) -> list[tuple[type, dict[str, Any]]] |
     return tests or None
 
 
-@contextlib.contextmanager
-def _silence_external_output() -> Iterator[None]:
-    devnull = open(os.devnull, "w", encoding="utf-8")
-    try:
-        prev_disable: int = int(logging.root.manager.disable)
-        logging.disable(logging.CRITICAL)
-        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-            yield
-    finally:
-        logging.disable(prev_disable)
-        devnull.close()
-
-
 class LlamatorRunner:
     """
     Исполнитель тестов LLAMATOR (вызывается worker-ом).
@@ -137,13 +120,12 @@ class LlamatorRunner:
         num_threads: int | None = resolved.plan.num_threads
         self._logger.info(f"Starting LLAMATOR run for job_id={resolved.job_id}")
 
-        with _silence_external_output():
-            return llamator.start_testing(
-                    attack_model=attack_model,
-                    tested_model=tested_model,
-                    config=resolved.run_config,
-                    judge_model=judge_model,
-                    num_threads=num_threads,
-                    basic_tests=basic_tests,
-                    custom_tests=custom_tests,
-            )
+        return llamator.start_testing(
+                attack_model=attack_model,
+                tested_model=tested_model,
+                config=resolved.run_config,
+                judge_model=judge_model,
+                num_threads=num_threads,
+                basic_tests=basic_tests,
+                custom_tests=custom_tests,
+        )
