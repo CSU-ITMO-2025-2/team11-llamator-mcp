@@ -1,4 +1,3 @@
-# llamator-mcp-server/src/llamator_mcp_server/domain/models.py
 from __future__ import annotations
 
 from datetime import datetime

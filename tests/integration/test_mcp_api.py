@@ -1,5 +1,3 @@
-# llamator-mcp-server/tests/integration/test_mcp_api.py
-# llamator-mcp-server/tests/integration/test_mcp_api.py
 from __future__ import annotations
 
 import json
