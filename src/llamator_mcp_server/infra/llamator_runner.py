@@ -13,7 +13,6 @@ from typing import Iterator
 
 import llamator
 
-from llamator_mcp_server.domain.models import BasicTestSpec
 from llamator_mcp_server.domain.models import OpenAIClientConfig
 from llamator_mcp_server.domain.models import TestParameter
 from llamator_mcp_server.domain.models import TestPlan
@@ -148,13 +147,3 @@ class LlamatorRunner:
                     basic_tests=basic_tests,
                     custom_tests=custom_tests,
             )
-
-
-def normalize_basic_test(spec: BasicTestSpec) -> tuple[str, dict[str, Any]]:
-    """
-    Нормализовать BasicTestSpec для сериализации/логирования.
-
-    :param spec: Спецификация теста.
-    :return: Пара (code_name, params dict).
-    """
-    return spec.code_name, _params_to_dict(spec.params)

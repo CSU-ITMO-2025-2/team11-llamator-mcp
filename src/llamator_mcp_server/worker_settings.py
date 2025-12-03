@@ -201,12 +201,20 @@ def _load_settings_with_defaults() -> Settings:
 
 
 _CLIENT_CONFIG_ADAPTER: TypeAdapter[Any] = TypeAdapter(OpenAIClientConfig)
+_START_TESTING_RESULT_ADAPTER: TypeAdapter[Any] = TypeAdapter(dict[str, dict[str, int]])
 
 
 def _validate_client_config(val: Any) -> OpenAIClientConfig:
     if not isinstance(val, dict):
         raise ValueError("ClientConfig payload must be an object.")
     parsed: Any = _CLIENT_CONFIG_ADAPTER.validate_python(val)
+    return parsed  # type: ignore[return-value]
+
+
+def _validate_start_testing_result(val: Any) -> dict[str, dict[str, int]]:
+    if not isinstance(val, dict):
+        raise ValueError("start_testing result must be an object.")
+    parsed: Any = _START_TESTING_RESULT_ADAPTER.validate_python(val)
     return parsed  # type: ignore[return-value]
 
 
@@ -247,7 +255,9 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
 
         runner: LlamatorRunner = LlamatorRunner(logger=logger)
 
-        aggregated: dict[str, dict[str, int]] = await asyncio.to_thread(runner.run, resolved)
+        aggregated_raw: Any = await asyncio.to_thread(runner.run, resolved)
+        aggregated: dict[str, dict[str, int]] = _validate_start_testing_result(aggregated_raw)
+
         await store.set_result(job_id, aggregated)
         logger.info(f"Worker finished job_id={job_id} status=succeeded")
         return {"job_id": job_id, "aggregated": aggregated, "finished_at": _utcnow().isoformat()}

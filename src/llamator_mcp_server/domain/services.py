@@ -6,7 +6,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
-from pathlib import Path
 from typing import Any
 
 from arq.connections import ArqRedis
@@ -77,18 +76,6 @@ def _redact_request(
     }
 
 
-def _ensure_safe_relative_artifacts_path(relative_path: str) -> str:
-    """
-    Проверить и нормализовать относительный путь для артефактов.
-
-    Запрещает абсолютные и выходящие за пределы разрешённого корня пути.
-    """
-    p = Path(relative_path)
-    if p.is_absolute() or ".." in p.parts:
-        raise ValueError("artifacts_path must be a safe relative path.")
-    return str(p.as_posix())
-
-
 def _build_attack_client(settings: Settings) -> OpenAIClientConfig:
     """
     Build an attack model configuration from environment-backed settings.
@@ -138,15 +125,11 @@ def _merge_run_config(
     Формирует полную конфигурацию запуска LLAMATOR.
     """
     effective: dict[str, Any] = {}
-    artifacts_rel: str = user_cfg.artifacts_path if (
-            user_cfg is not None and user_cfg.artifacts_path is not None
-    ) else job_id
-    artifacts_rel = _ensure_safe_relative_artifacts_path(artifacts_rel)
 
     enable_logging: bool = True if user_cfg is None or user_cfg.enable_logging is None else bool(
-        user_cfg.enable_logging)
+            user_cfg.enable_logging)
     enable_reports: bool = False if user_cfg is None or user_cfg.enable_reports is None else bool(
-        user_cfg.enable_reports)
+            user_cfg.enable_reports)
     debug_level: int = 1 if user_cfg is None or user_cfg.debug_level is None else int(user_cfg.debug_level)
     report_language: str = settings.report_language if user_cfg is None or user_cfg.report_language is None else user_cfg.report_language
 
@@ -154,7 +137,7 @@ def _merge_run_config(
     effective["enable_reports"] = enable_reports
     effective["debug_level"] = debug_level
     effective["report_language"] = report_language
-    effective["artifacts_path"] = str((settings.artifacts_root / artifacts_rel).resolve())
+    effective["artifacts_path"] = str((settings.artifacts_root / job_id).resolve())
     return effective
 
 
