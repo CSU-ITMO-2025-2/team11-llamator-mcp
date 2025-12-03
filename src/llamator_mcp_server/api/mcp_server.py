@@ -1,5 +1,3 @@
-# llamator-mcp-server/src/llamator_mcp_server/api/mcp_server.py
-# llamator-mcp-server/src/llamator_mcp_server/api/mcp_server.py
 from __future__ import annotations
 
 import asyncio
@@ -125,13 +123,14 @@ def build_mcp(
     @mcp.tool()
     async def create_llamator_run(req: LlamatorTestRunRequest) -> dict[str, dict[str, int]]:
         """
-        Создать задание на тестирование LLM endpoint-а через LLAMATOR и вернуть финальный результат.
+        Create a LLAMATOR job and return the aggregated result after completion.
 
-        :param req: Запрос запуска.
-        :return: Финальное состояние задания (SUCCEEDED/FAILED) с результатом или ошибкой.
-        :raises ValueError: При некорректных данных.
-        :raises TimeoutError: Если выполнение не завершилось за таймаут.
-        :raises KeyError: Если задание не найдено (неожиданно для только что созданного).
+        :param req: Run request.
+        :return: Aggregated LLAMATOR results for a succeeded job.
+        :raises ValueError: If the request is invalid or the job is not finished.
+        :raises TimeoutError: If the job does not complete within the configured timeout.
+        :raises KeyError: If the job cannot be found in the store.
+        :raises RuntimeError: If the job failed or returned an inconsistent state.
         """
         logger.info(f"Received MCP create_llamator_run parameters: {_safe_log_request(req)}")
         validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
@@ -150,11 +149,13 @@ def build_mcp(
     @mcp.tool()
     async def get_llamator_run(job_id: str) -> dict[str, dict[str, int]]:
         """
-        Получить состояние задания LLAMATOR.
+        Return aggregated LLAMATOR results for a finished job.
 
-        :param job_id: Идентификатор задания.
-        :return: Статус и результаты (если доступны).
-        :raises KeyError: Если задание не найдено.
+        :param job_id: Job identifier.
+        :return: Aggregated LLAMATOR results for a succeeded job.
+        :raises KeyError: If the job cannot be found in the store.
+        :raises ValueError: If the job is not finished yet.
+        :raises RuntimeError: If the job failed or returned an inconsistent state.
         """
         info: LlamatorJobInfo = await store.get(job_id)
         return _extract_aggregated_result(info)

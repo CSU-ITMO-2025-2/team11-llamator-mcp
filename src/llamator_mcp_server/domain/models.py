@@ -35,7 +35,6 @@ class ClientKind(str, Enum):
     Тип клиента для взаимодействия с LLM.
 
     :cvar OPENAI: OpenAI-совместимый API.
-    :cvar LANGCHAIN: LangChain backend.
     """
 
     OPENAI = "openai"
@@ -225,9 +224,7 @@ class LlamatorTestRunRequest(BaseModel):
     Запрос на запуск тестирования определённого LLM endpoint-а через LLAMATOR.
 
     :param tested_model: Конфигурация тестируемой модели.
-    :param attack_model: Конфигурация модели-атакера (опционально; иначе используется дефолт сервера).
-    :param judge_model: Конфигурация модели-судьи (опционально; иначе используется дефолт сервера).
-    :param run_config: Конфигурация LLAMATOR запуска.
+    :param run_config: Конфигурация LLAMATOR запуска (опционально).
     :param plan: План тестирования.
     :raises ValueError: При некорректных данных.
     """

@@ -8,8 +8,6 @@ import logging
 class _SuppressMcpClosedResourceErrorFilter(logging.Filter):
     """
     Filter out noisy anyio.ClosedResourceError tracebacks emitted by MCP Streamable HTTP.
-
-    :param name: Optional logger name to attach the filter to.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:

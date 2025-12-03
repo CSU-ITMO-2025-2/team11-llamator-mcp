@@ -47,7 +47,7 @@ class _ApiKeyAsgiWrapper:
                         "status": 401,
                         "headers": [
                             (b"content-type", b"application/json"),
-                            (b"content-length", str(len(body)).encode()),
+                            (b"content-length", str(len(body)).encode("ascii")),
                         ],
                     }
             )
@@ -172,15 +172,11 @@ class _McpSseToJsonWrapper:
 
             if msg_type == "http.response.body":
                 if captured_start is None:
-                    captured_start = {
-                        "type": "http.response.start",
-                        "status": 500,
-                        "headers": [(b"content-type", b"application/json")],
-                    }
+                    raise RuntimeError("ASGI protocol violation: response body sent before response start.")
 
                 body_part: Any = message.get("body", b"")
                 if not isinstance(body_part, (bytes, bytearray)):
-                    body_part = b""
+                    raise RuntimeError("ASGI protocol violation: response body must be bytes.")
 
                 captured_bytes += len(body_part)
                 if captured_bytes > self._max_body_bytes:
@@ -204,8 +200,7 @@ class _McpSseToJsonWrapper:
         if captured_start is None:
             return
 
-        headers_raw: Any = captured_start.get("headers", [])
-        headers: list[tuple[bytes, bytes]] = list(headers_raw) if isinstance(headers_raw, list) else []
+        headers: list[tuple[bytes, bytes]] = list(captured_start.get("headers", []))
 
         content_type_val: bytes | None = _header_value(headers, b"content-type")
         content_type: str = content_type_val.decode("latin-1").lower() if content_type_val is not None else ""
@@ -217,7 +212,7 @@ class _McpSseToJsonWrapper:
             return
 
         combined: bytes = b"".join(
-                bytes(m.get("body", b"")) if isinstance(m.get("body", b""), (bytes, bytearray)) else b""
+                bytes(m.get("body", b""))
                 for m in captured_body_msgs
         )
 
