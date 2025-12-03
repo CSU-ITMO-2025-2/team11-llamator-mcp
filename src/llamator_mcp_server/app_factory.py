@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import AsyncIterator
 
 from arq import create_pool
@@ -10,15 +9,12 @@ from arq.connections import ArqRedis
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from llamator_mcp_server.api.asgi_wrappers import _ApiKeyAsgiWrapper
-from llamator_mcp_server.api.asgi_wrappers import _McpSseToJsonWrapper
+from llamator_mcp_server.api.asgi_wrappers import _ApiKeyAsgiWrapper, _McpSseToJsonWrapper
 from llamator_mcp_server.api.http import build_router
 from llamator_mcp_server.api.mcp_server import build_mcp
 from llamator_mcp_server.config.settings import settings
-from llamator_mcp_server.infra.redis import create_redis_client
-from llamator_mcp_server.infra.redis import parse_redis_settings
-from llamator_mcp_server.utils.logging import LOGGER_NAME
-from llamator_mcp_server.utils.logging import configure_logging
+from llamator_mcp_server.infra.redis import create_redis_client, parse_redis_settings
+from llamator_mcp_server.utils.logging import LOGGER_NAME, configure_logging
 
 
 async def _close_arq_pool(arq_pool: ArqRedis) -> None:

@@ -5,20 +5,15 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
 from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.domain.models import LlamatorJobInfo
-from llamator_mcp_server.domain.models import LlamatorTestRunRequest
-from llamator_mcp_server.domain.models import LlamatorTestRunResponse
-from llamator_mcp_server.domain.services import TestRunService
-from llamator_mcp_server.domain.services import validate_test_specs
+from llamator_mcp_server.domain.models import LlamatorJobInfo, LlamatorTestRunRequest, LlamatorTestRunResponse
+from llamator_mcp_server.domain.services import TestRunService, validate_test_specs
 from llamator_mcp_server.infra.job_store import JobStore
+
 from .security import require_api_key
 
 
@@ -56,10 +51,10 @@ def _list_files(root: Path) -> list[dict[str, Any]]:
 
 
 def build_router(
-        settings: Settings,
-        redis: Redis,
-        arq: Any,
-        logger: logging.Logger,
+    settings: Settings,
+    redis: Redis,
+    arq: Any,
+    logger: logging.Logger,
 ) -> APIRouter:
     """
     Построить HTTP роутер API.

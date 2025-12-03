@@ -8,10 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import llamator
-
-from llamator_mcp_server.domain.models import OpenAIClientConfig
-from llamator_mcp_server.domain.models import TestParameter
-from llamator_mcp_server.domain.models import TestPlan
+from llamator_mcp_server.domain.models import OpenAIClientConfig, TestParameter, TestPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,12 +42,12 @@ def _build_client(cfg: OpenAIClientConfig) -> Any:
     api_key: str = cfg.api_key or ""
     temperature: float = cfg.temperature if cfg.temperature is not None else 0.1
     return llamator.ClientOpenAI(
-            api_key=api_key,
-            base_url=str(cfg.base_url),
-            model=cfg.model,
-            temperature=temperature,
-            system_prompts=list(cfg.system_prompts) if cfg.system_prompts is not None else None,
-            model_description=cfg.model_description,
+        api_key=api_key,
+        base_url=str(cfg.base_url),
+        model=cfg.model,
+        temperature=temperature,
+        system_prompts=list(cfg.system_prompts) if cfg.system_prompts is not None else None,
+        model_description=cfg.model_description,
     )
 
 
@@ -121,11 +118,11 @@ class LlamatorRunner:
         self._logger.info(f"Starting LLAMATOR run for job_id={resolved.job_id}")
 
         return llamator.start_testing(
-                attack_model=attack_model,
-                tested_model=tested_model,
-                config=resolved.run_config,
-                judge_model=judge_model,
-                num_threads=num_threads,
-                basic_tests=basic_tests,
-                custom_tests=custom_tests,
+            attack_model=attack_model,
+            tested_model=tested_model,
+            config=resolved.run_config,
+            judge_model=judge_model,
+            num_threads=num_threads,
+            basic_tests=basic_tests,
+            custom_tests=custom_tests,
         )

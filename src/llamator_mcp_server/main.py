@@ -17,8 +17,8 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(
-            "llamator_mcp_server.main:app",
-            host=settings.http_host,
-            port=settings.http_port,
-            log_level=settings.uvicorn_log_level.lower(),
+        "llamator_mcp_server.main:app",
+        host=settings.http_host,
+        port=settings.http_port,
+        log_level=settings.uvicorn_log_level.lower(),
     )

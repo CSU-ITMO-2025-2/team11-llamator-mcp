@@ -2,26 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from arq.connections import RedisSettings
 from pydantic import TypeAdapter
 
-from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.config.settings import settings
-from llamator_mcp_server.domain.models import JobStatus
-from llamator_mcp_server.domain.models import OpenAIClientConfig
-from llamator_mcp_server.domain.models import TestPlan
+from llamator_mcp_server.config.settings import Settings, settings
+from llamator_mcp_server.domain.models import JobStatus, OpenAIClientConfig, TestPlan
 from llamator_mcp_server.infra.job_store import JobStore
-from llamator_mcp_server.infra.llamator_runner import LlamatorRunner
-from llamator_mcp_server.infra.llamator_runner import ResolvedRun
-from llamator_mcp_server.infra.redis import create_redis_client
-from llamator_mcp_server.infra.redis import parse_redis_settings
-from llamator_mcp_server.utils.logging import LOGGER_NAME
-from llamator_mcp_server.utils.logging import configure_logging
+from llamator_mcp_server.infra.llamator_runner import LlamatorRunner, ResolvedRun
+from llamator_mcp_server.infra.redis import create_redis_client, parse_redis_settings
+from llamator_mcp_server.utils.logging import LOGGER_NAME, configure_logging
 
 
 def _utcnow() -> datetime:
@@ -74,13 +67,13 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
         artifacts_root: Path = Path(str(run_config["artifacts_path"]))
 
         resolved: ResolvedRun = ResolvedRun(
-                job_id=job_id,
-                attack_model=attack_model,
-                tested_model=tested_model,
-                judge_model=judge_model,
-                plan=plan,
-                run_config=run_config,
-                artifacts_root=artifacts_root,
+            job_id=job_id,
+            attack_model=attack_model,
+            tested_model=tested_model,
+            judge_model=judge_model,
+            plan=plan,
+            run_config=run_config,
+            artifacts_root=artifacts_root,
         )
 
         runner: LlamatorRunner = LlamatorRunner(logger=logger)

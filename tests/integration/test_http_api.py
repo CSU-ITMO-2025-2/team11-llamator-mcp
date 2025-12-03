@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from llamator_mcp_server.domain.models import JobStatus
-from llamator_mcp_server.domain.models import LlamatorJobInfo
-from llamator_mcp_server.domain.models import LlamatorTestRunResponse
-from tests.conftest import ArtifactsListResponse
-from tests.conftest import ClientResponse
-from tests.conftest import HttpJsonClient
+from llamator_mcp_server.domain.models import JobStatus, LlamatorJobInfo, LlamatorTestRunResponse
+from tests.conftest import ArtifactsListResponse, ClientResponse, HttpJsonClient
 
 
-def _create_run(http_client: HttpJsonClient, headers: dict[str, str],
-                payload: dict[str, Any]) -> LlamatorTestRunResponse:
+def _create_run(
+    http_client: HttpJsonClient, headers: dict[str, str], payload: dict[str, Any]
+) -> LlamatorTestRunResponse:
     resp: ClientResponse = http_client.post_json("/v1/tests/runs", payload, headers=headers)
     assert resp.status == 200, f"create_run status={resp.status} body={resp.body!r}"
     return LlamatorTestRunResponse.model_validate(resp.json())
@@ -26,9 +23,9 @@ def test_health(http_client: HttpJsonClient, http_headers: dict[str, str]) -> No
 
 
 def test_create_run_and_get_status(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
     assert created.job_id
@@ -54,9 +51,9 @@ def test_get_nonexistent_job_404(http_client: HttpJsonClient, http_headers: dict
 
 
 def test_list_artifacts_schema(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
 
@@ -73,21 +70,22 @@ def test_list_artifacts_schema(
 
 
 def test_download_artifact_rejects_path_traversal(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
 
     resp: ClientResponse = http_client.get(
-            f"/v1/tests/runs/{created.job_id}/artifacts/../secrets.txt",
-            headers=http_headers,
+        f"/v1/tests/runs/{created.job_id}/artifacts/../secrets.txt",
+        headers=http_headers,
     )
     assert resp.status == 400, f"expected 400, got {resp.status} body={resp.body!r}"
 
 
-def test_create_run_validation_error_duplicate_param_names(http_client: HttpJsonClient,
-                                                           http_headers: dict[str, str]) -> None:
+def test_create_run_validation_error_duplicate_param_names(
+    http_client: HttpJsonClient, http_headers: dict[str, str]
+) -> None:
     payload: dict[str, Any] = {
         "tested_model": {"kind": "openai", "base_url": "http://localhost:9999/v1", "model": "dummy"},
         "plan": {

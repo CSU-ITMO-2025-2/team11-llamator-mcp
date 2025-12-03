@@ -40,12 +40,12 @@ def parse_redis_settings(dsn: str) -> RedisSettings:
         database = int(raw_db)
 
     return RedisSettings(
-            host=parsed.hostname,
-            port=parsed.port or 6379,
-            database=database,
-            password=parsed.password,
-            username=parsed.username,
-            ssl=(parsed.scheme == "rediss"),
+        host=parsed.hostname,
+        port=parsed.port or 6379,
+        database=database,
+        password=parsed.password,
+        username=parsed.username,
+        ssl=(parsed.scheme == "rediss"),
     )
 
 

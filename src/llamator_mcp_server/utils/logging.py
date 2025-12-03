@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Final
-
 import logging
+from typing import Final
 
 
 class _SuppressMcpClosedResourceErrorFilter(logging.Filter):
@@ -42,8 +41,8 @@ def configure_logging(level: str) -> None:
         return
 
     formatter: logging.Formatter = logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S%z",
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
     )
     handler: logging.StreamHandler = logging.StreamHandler()
     handler.setFormatter(formatter)

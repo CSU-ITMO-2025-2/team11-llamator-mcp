@@ -3,22 +3,22 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
-from datetime import timezone
-from pathlib import Path
-from pathlib import PurePosixPath
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from arq.connections import ArqRedis
 
 from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.domain.models import BasicTestSpec
-from llamator_mcp_server.domain.models import CustomTestSpec
-from llamator_mcp_server.domain.models import JobStatus
-from llamator_mcp_server.domain.models import LlamatorRunConfig
-from llamator_mcp_server.domain.models import LlamatorTestRunRequest
-from llamator_mcp_server.domain.models import OpenAIClientConfig
-from llamator_mcp_server.domain.models import TestParameter
+from llamator_mcp_server.domain.models import (
+    BasicTestSpec,
+    CustomTestSpec,
+    JobStatus,
+    LlamatorRunConfig,
+    LlamatorTestRunRequest,
+    OpenAIClientConfig,
+    TestParameter,
+)
 from llamator_mcp_server.infra.job_store import JobStore
 
 
@@ -47,9 +47,9 @@ def _redact_client(cfg: OpenAIClientConfig) -> dict[str, Any]:
 
 
 def _redact_request(
-        req: LlamatorTestRunRequest,
-        attack: OpenAIClientConfig,
-        judge: OpenAIClientConfig,
+    req: LlamatorTestRunRequest,
+    attack: OpenAIClientConfig,
+    judge: OpenAIClientConfig,
 ) -> dict[str, Any]:
     """
     Отфильтровать конфиденциальные данные в запросе тестирования перед сохранением.
@@ -87,12 +87,12 @@ def _build_attack_client(settings: Settings) -> OpenAIClientConfig:
     """
     api_key_val: str | None = settings.attack_openai_api_key or None
     return OpenAIClientConfig(
-            api_key=api_key_val,
-            base_url=settings.attack_openai_base_url,
-            model=settings.attack_openai_model,
-            temperature=settings.attack_openai_temperature,
-            system_prompts=settings.attack_openai_system_prompts,
-            model_description=None,
+        api_key=api_key_val,
+        base_url=settings.attack_openai_base_url,
+        model=settings.attack_openai_model,
+        temperature=settings.attack_openai_temperature,
+        system_prompts=settings.attack_openai_system_prompts,
+        model_description=None,
     )
 
 
@@ -106,12 +106,12 @@ def _build_judge_client(settings: Settings) -> OpenAIClientConfig:
     """
     api_key_val: str | None = settings.judge_openai_api_key or None
     return OpenAIClientConfig(
-            api_key=api_key_val,
-            base_url=settings.judge_openai_base_url,
-            model=settings.judge_openai_model,
-            temperature=settings.judge_openai_temperature,
-            system_prompts=settings.judge_openai_system_prompts,
-            model_description=None,
+        api_key=api_key_val,
+        base_url=settings.judge_openai_base_url,
+        model=settings.judge_openai_model,
+        temperature=settings.judge_openai_temperature,
+        system_prompts=settings.judge_openai_system_prompts,
+        model_description=None,
     )
 
 
@@ -131,9 +131,9 @@ def _resolve_artifacts_dir(settings: Settings, job_id: str, user_cfg: LlamatorRu
 
 
 def _merge_run_config(
-        settings: Settings,
-        job_id: str,
-        user_cfg: LlamatorRunConfig | None,
+    settings: Settings,
+    job_id: str,
+    user_cfg: LlamatorRunConfig | None,
 ) -> dict[str, Any]:
     """
     Объединить конфигурацию запуска от пользователя с настройками по умолчанию.
@@ -142,12 +142,16 @@ def _merge_run_config(
     """
     effective: dict[str, Any] = {}
 
-    enable_logging: bool = True if user_cfg is None or user_cfg.enable_logging is None else bool(
-            user_cfg.enable_logging)
-    enable_reports: bool = False if user_cfg is None or user_cfg.enable_reports is None else bool(
-            user_cfg.enable_reports)
+    enable_logging: bool = (
+        True if user_cfg is None or user_cfg.enable_logging is None else bool(user_cfg.enable_logging)
+    )
+    enable_reports: bool = (
+        False if user_cfg is None or user_cfg.enable_reports is None else bool(user_cfg.enable_reports)
+    )
     debug_level: int = 1 if user_cfg is None or user_cfg.debug_level is None else int(user_cfg.debug_level)
-    report_language: str = settings.report_language if user_cfg is None or user_cfg.report_language is None else user_cfg.report_language
+    report_language: str = (
+        settings.report_language if user_cfg is None or user_cfg.report_language is None else user_cfg.report_language
+    )
 
     effective["enable_logging"] = enable_logging
     effective["enable_reports"] = enable_reports
@@ -169,6 +173,7 @@ class SubmitResult:
     :param created_at: Время создания.
     :param status: Статус.
     """
+
     job_id: str
     created_at: datetime
     status: JobStatus
@@ -238,8 +243,8 @@ def validate_unique_param_names(params: tuple[TestParameter, ...]) -> None:
 
 
 def validate_test_specs(
-        basic_tests: tuple[BasicTestSpec, ...] | None,
-        custom_tests: tuple[CustomTestSpec, ...] | None,
+    basic_tests: tuple[BasicTestSpec, ...] | None,
+    custom_tests: tuple[CustomTestSpec, ...] | None,
 ) -> None:
     """
     Базовая валидация списков тестов.

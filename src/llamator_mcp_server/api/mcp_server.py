@@ -2,19 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
-from typing import Final
+from typing import Any, Final
 
 from arq.connections import ArqRedis
 from mcp.server.fastmcp import FastMCP
 from redis.asyncio import Redis
 
 from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.domain.models import JobStatus
-from llamator_mcp_server.domain.models import LlamatorJobInfo
-from llamator_mcp_server.domain.models import LlamatorTestRunRequest
-from llamator_mcp_server.domain.services import TestRunService
-from llamator_mcp_server.domain.services import validate_test_specs
+from llamator_mcp_server.domain.models import JobStatus, LlamatorJobInfo, LlamatorTestRunRequest
+from llamator_mcp_server.domain.services import TestRunService, validate_test_specs
 from llamator_mcp_server.infra.job_store import JobStore
 
 
@@ -50,9 +46,9 @@ def _safe_log_request(req: LlamatorTestRunRequest) -> dict[str, Any]:
 
 
 async def _await_job_completion(
-        store: JobStore,
-        job_id: str,
-        timeout_seconds: int,
+    store: JobStore,
+    job_id: str,
+    timeout_seconds: int,
 ) -> LlamatorJobInfo:
     """
     Дождаться завершения задания (SUCCEEDED/FAILED), опрашивая JobStore.
@@ -96,10 +92,10 @@ def _extract_aggregated_result(info: LlamatorJobInfo) -> dict[str, dict[str, int
 
 
 def build_mcp(
-        settings: Settings,
-        redis: Redis,
-        arq: ArqRedis,
-        logger: logging.Logger,
+    settings: Settings,
+    redis: Redis,
+    arq: ArqRedis,
+    logger: logging.Logger,
 ) -> FastMCP:
     """
     Построить MCP сервер с инструментами для запуска и мониторинга LLAMATOR.
@@ -111,10 +107,10 @@ def build_mcp(
     :return: Экземпляр FastMCP.
     """
     mcp: FastMCP = FastMCP(
-            name="llamator-mcp-server",
-            stateless_http=True,
-            streamable_http_path=settings.mcp_streamable_http_path,
-            json_response=True,
+        name="llamator-mcp-server",
+        stateless_http=True,
+        streamable_http_path=settings.mcp_streamable_http_path,
+        json_response=True,
     )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
@@ -140,9 +136,9 @@ def build_mcp(
 
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
         info: LlamatorJobInfo = await _await_job_completion(
-                store=store,
-                job_id=submitted.job_id,
-                timeout_seconds=settings.run_timeout_seconds,
+            store=store,
+            job_id=submitted.job_id,
+            timeout_seconds=settings.run_timeout_seconds,
         )
         return _extract_aggregated_result(info)
 

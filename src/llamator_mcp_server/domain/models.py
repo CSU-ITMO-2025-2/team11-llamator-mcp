@@ -6,12 +6,7 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel
-from pydantic import ConfigDict
-from pydantic import Field
-from pydantic import HttpUrl
-from pydantic import field_validator
-from pydantic import model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class JobStatus(str, Enum):
@@ -211,7 +206,7 @@ class TestPlan(BaseModel):
     custom_tests: tuple[CustomTestSpec, ...] | None = None
 
     @model_validator(mode="after")
-    def _validate_plan(self) -> "TestPlan":
+    def _validate_plan(self) -> TestPlan:
         if self.num_threads is not None and self.num_threads < 1:
             raise ValueError("num_threads must be >= 1.")
         if self.preset_name is not None and not self.preset_name.strip():
