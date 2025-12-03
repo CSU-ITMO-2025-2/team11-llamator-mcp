@@ -8,6 +8,8 @@ from datetime import timezone
 from typing import Any
 
 from arq.connections import RedisSettings
+from pydantic import TypeAdapter
+
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import ClientConfig
 from llamator_mcp_server.domain.models import JobStatus
@@ -19,7 +21,6 @@ from llamator_mcp_server.infra.redis import create_redis_client
 from llamator_mcp_server.infra.redis import parse_redis_settings
 from llamator_mcp_server.utils.logging import LOGGER_NAME
 from llamator_mcp_server.utils.logging import configure_logging
-from pydantic import TypeAdapter
 
 
 def _utcnow() -> datetime:
@@ -54,8 +55,8 @@ def _load_settings_with_defaults() -> Settings:
         "artifacts_root": "/data/artifacts",
         "api_key": "",
         "log_level": "INFO",
-        "aux_openai_base_url": "http://tgi:80/v1",
-        "aux_openai_model": "tgi",
+        "aux_openai_base_url": "http://vllm:80/v1",
+        "aux_openai_model": "vllm",
         "aux_openai_api_key": "dummy",
         "job_ttl_seconds": 7 * 24 * 60 * 60,
         "run_timeout_seconds": 60 * 60,
