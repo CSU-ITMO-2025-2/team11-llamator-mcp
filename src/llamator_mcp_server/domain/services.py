@@ -1,4 +1,3 @@
-# llamator-mcp-server/src/llamator_mcp_server/domain/services.py
 from __future__ import annotations
 
 import logging
@@ -6,6 +5,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from arq.connections import ArqRedis
@@ -114,6 +115,21 @@ def _build_judge_client(settings: Settings) -> OpenAIClientConfig:
     )
 
 
+def _resolve_artifacts_dir(settings: Settings, job_id: str, user_cfg: LlamatorRunConfig | None) -> Path:
+    base: Path = (settings.artifacts_root / job_id).resolve(strict=False)
+
+    if user_cfg is None or user_cfg.artifacts_path is None:
+        return base
+
+    rel: PurePosixPath = PurePosixPath(user_cfg.artifacts_path)
+    candidate: Path = (base / Path(*rel.parts)).resolve(strict=False)
+
+    if base not in candidate.parents and candidate != base:
+        raise ValueError("artifacts_path escaped job artifacts root.")
+
+    return candidate
+
+
 def _merge_run_config(
         settings: Settings,
         job_id: str,
@@ -137,7 +153,10 @@ def _merge_run_config(
     effective["enable_reports"] = enable_reports
     effective["debug_level"] = debug_level
     effective["report_language"] = report_language
-    effective["artifacts_path"] = str((settings.artifacts_root / job_id).resolve())
+
+    artifacts_dir: Path = _resolve_artifacts_dir(settings=settings, job_id=job_id, user_cfg=user_cfg)
+    effective["artifacts_path"] = str(artifacts_dir)
+
     return effective
 
 
@@ -220,7 +239,7 @@ def validate_unique_param_names(params: tuple[TestParameter, ...]) -> None:
 
 def validate_test_specs(
         basic_tests: tuple[BasicTestSpec, ...] | None,
-        custom_tests: tuple[CustomTestSpec, ...] | None = None,
+        custom_tests: tuple[CustomTestSpec, ...] | None,
 ) -> None:
     """
     Базовая валидация списков тестов.

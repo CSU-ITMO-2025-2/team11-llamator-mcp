@@ -8,7 +8,10 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import FileResponse
+from redis.asyncio import Redis
+
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import LlamatorJobInfo
 from llamator_mcp_server.domain.models import LlamatorTestRunRequest
@@ -16,8 +19,6 @@ from llamator_mcp_server.domain.models import LlamatorTestRunResponse
 from llamator_mcp_server.domain.services import TestRunService
 from llamator_mcp_server.domain.services import validate_test_specs
 from llamator_mcp_server.infra.job_store import JobStore
-from redis.asyncio import Redis
-
 from .security import require_api_key
 
 
@@ -28,7 +29,7 @@ def _safe_join(root: Path, *parts: str) -> Path:
     Генерирует абсолютный путь и проверяет, что он лежит внутри корня.
     """
     candidate: Path = (root.joinpath(*parts)).resolve(strict=False)
-    root_resolved: Path = root.resolve()
+    root_resolved: Path = root.resolve(strict=False)
     if root_resolved not in candidate.parents and candidate != root_resolved:
         raise ValueError("Unsafe path.")
     return candidate
@@ -69,7 +70,11 @@ def build_router(
     :param logger: Логгер.
     :return: Роутер FastAPI.
     """
-    router: APIRouter = APIRouter()
+
+    async def _require_api_key_dep(request: Request) -> None:
+        await require_api_key(settings=settings, x_api_key=request.headers.get("x-api-key"))
+
+    router: APIRouter = APIRouter(dependencies=[Depends(_require_api_key_dep)])
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
     service: TestRunService = TestRunService(arq=arq, store=store, settings=settings, logger=logger)
@@ -159,5 +164,4 @@ def build_router(
         """
         return {"status": "ok"}
 
-    router.dependencies.append(Depends(lambda: require_api_key(settings)))  # type: ignore[arg-type]
     return router

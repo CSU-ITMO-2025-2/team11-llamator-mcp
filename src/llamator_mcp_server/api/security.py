@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from fastapi import Header
+
 from llamator_mcp_server.config.settings import Settings
 
 
-async def require_api_key(settings: Settings, x_api_key: str | None = Header(default=None)) -> None:
+async def require_api_key(settings: Settings, x_api_key: str | None) -> None:
     """
     Проверить доступ по API-ключу.
 
