@@ -16,19 +16,44 @@ services:
     environment:
       HF_HOME: /data/hf
       HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      LLAMATOR_MCP_TGI_DEVICE: ${LLAMATOR_MCP_TGI_DEVICE:-cpu}
+      LLAMATOR_MCP_TGI_CUDA_GRAPHS: ${LLAMATOR_MCP_TGI_CUDA_GRAPHS:-}
     volumes:
       - hf-cache:/data
     command:
-      [
-        "--model-id",
-        "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}",
-        "--port",
-        "80",
-        "--max-input-length",
-        "${AUX_LLM_MAX_INPUT_LEN:-2048}",
-        "--max-total-tokens",
-        "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
-      ]
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        
+        device="${LLAMATOR_MCP_TGI_DEVICE:-cpu}"
+        
+        case "${device}" in
+          cpu|cuda|mps)
+            ;;
+          *)
+            echo "Invalid LLAMATOR_MCP_TGI_DEVICE: ${device}. Allowed: cpu, cuda, mps." >&2
+            exit 64
+            ;;
+        esac
+        
+        args=(
+          "--model-id" "${AUX_LLM_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct}"
+          "--port" "80"
+          "--max-input-length" "${AUX_LLM_MAX_INPUT_LEN:-2048}"
+          "--max-total-tokens" "${AUX_LLM_MAX_TOTAL_TOKENS:-4096}"
+        )
+        
+        if [ "${device}" != "cuda" ]; then
+          args+=("--disable-custom-kernels" "--cuda-graphs" "0")
+        else
+          cuda_graphs="${LLAMATOR_MCP_TGI_CUDA_GRAPHS:-}"
+          if [ -n "${cuda_graphs}" ]; then
+            args+=("--cuda-graphs" "${cuda_graphs}")
+          fi
+        fi
+        
+        exec text-generation-launcher "${args[@]}"
     healthcheck:
       test:
         [
