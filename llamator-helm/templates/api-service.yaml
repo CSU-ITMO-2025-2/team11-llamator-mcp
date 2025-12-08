@@ -1,0 +1,24 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llamator-mcp.api.fullname" . }}
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.api.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: {{ .Values.api.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "llamator-mcp.api.selectorLabels" . | nindent 4 }}
+{{- end }}
+

@@ -1,0 +1,119 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-netpol
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "llamator-mcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress:
+    # Allow traffic within the same namespace (API, Worker, Redis communication)
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "llamator-mcp.selectorLabels" . | nindent 14 }}
+    
+    {{- if .Values.ingress.enabled }}
+    # Allow traffic from Ingress Controller to API pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.containerPort }}
+    {{- end }}
+  
+  egress:
+    # Allow communication within the same namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "llamator-mcp.selectorLabels" . | nindent 14 }}
+    
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    
+    {{- if .Values.networkPolicy.allowExternalEgress }}
+    # Allow external HTTPS/HTTP traffic (for OpenAI API calls)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Exclude private IP ranges
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16  # Link-local
+              - 127.0.0.0/8      # Loopback
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+    {{- end }}
+    
+    {{- with .Values.networkPolicy.egressRules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+# Separate NetworkPolicy for Redis to allow specific access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "llamator-mcp.redis.fullname" . }}-netpol
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "llamator-mcp.redis.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress:
+    # Only allow API and Worker pods to connect to Redis
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: worker
+      ports:
+        - protocol: TCP
+          port: 6379
+  
+  egress:
+    # Redis typically doesn't need egress, but allow DNS for troubleshooting
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
+

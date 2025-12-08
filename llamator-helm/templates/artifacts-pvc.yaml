@@ -1,0 +1,20 @@
+{{- if and .Values.artifacts.persistence.enabled (not .Values.artifacts.useEmptyDir) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "llamator-mcp.artifacts.pvc.name" . }}
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - {{ .Values.artifacts.persistence.accessMode }}
+  {{- if .Values.artifacts.persistence.storageClass }}
+  storageClassName: {{ .Values.artifacts.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.artifacts.persistence.size }}
+{{- end }}
+

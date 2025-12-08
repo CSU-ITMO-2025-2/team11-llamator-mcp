@@ -1,0 +1,35 @@
+{{- if .Values.vault.enabled }}
+{{- if .Values.vault.vaultSecretsOperator.enabled }}
+{{- if .Values.vault.vaultSecretsOperator.createConnection }}
+---
+# VaultConnection для подключения к Vault серверу
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: {{ .Values.vault.vaultSecretsOperator.vaultConnectionRef }}
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+spec:
+  # Адрес Vault сервера
+  address: {{ .Values.vault.address | quote }}
+  
+  {{- if .Values.vault.skipVerify }}
+  # ВНИМАНИЕ: Использовать только для development!
+  skipTLSVerify: true
+  {{- else }}
+  # TLS конфигурация для production
+  {{- if .Values.vault.caCertSecret }}
+  caCertSecretRef: {{ .Values.vault.caCertSecret }}
+  {{- end }}
+  {{- end }}
+  
+  {{- if .Values.vault.headers }}
+  # Дополнительные HTTP заголовки
+  headers:
+    {{- toYaml .Values.vault.headers | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+

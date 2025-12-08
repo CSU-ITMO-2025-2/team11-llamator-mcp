@@ -1,0 +1,23 @@
+apiVersion: v2
+name: llamator-mcp
+description: Production-ready LLAMATOR MCP Server for LLM Red Teaming
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+keywords:
+  - llamator
+  - mcp
+  - security
+  - llm-testing
+maintainers:
+  - name: Roman Neronov
+    email: roman.nieronov@mail.ru
+  - name: Timur Nizamov
+    email: abc@nizamovtimur.ru
+  - name: Ilia Tambovtsev
+    email: tambovtsev.io@phystech.edu
+  - name: Alina Nikitina
+    email: alinanikitten@gmail.com
+home: https://github.com/CSU-ITMO-2025-2/team11-llamator-mcp
+sources:
+  - https://github.com/CSU-ITMO-2025-2/team11-llamator-mcp

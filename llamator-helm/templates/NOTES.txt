@@ -1,0 +1,156 @@
+**************************************************
+LLAMATOR MCP Server - Successfully Deployed!
+**************************************************
+
+Release Name:   {{ .Release.Name }}
+Namespace:      {{ include "llamator-mcp.namespace" . }}
+Chart Version:  {{ .Chart.Version }}
+App Version:    {{ .Chart.AppVersion }}
+
+**************************************************
+COMPONENTS DEPLOYED:
+**************************************************
+
+{{- if .Values.api.enabled }}
+✓ API Server ({{ .Values.api.replicaCount }} replicas)
+  - Service: {{ include "llamator-mcp.api.fullname" . }}
+  - Port: {{ .Values.api.service.port }}
+  {{- if .Values.api.autoscaling.enabled }}
+  - HPA: {{ .Values.api.autoscaling.minReplicas }}-{{ .Values.api.autoscaling.maxReplicas }} replicas
+  {{- end }}
+{{- end }}
+
+{{- if .Values.worker.enabled }}
+✓ Worker ({{ .Values.worker.replicaCount }} replicas)
+  {{- if .Values.worker.autoscaling.enabled }}
+  - HPA: {{ .Values.worker.autoscaling.minReplicas }}-{{ .Values.worker.autoscaling.maxReplicas }} replicas
+  {{- end }}
+{{- end }}
+
+{{- if .Values.redis.enabled }}
+✓ Redis
+  - Service: {{ include "llamator-mcp.redis.fullname" . }}
+  - Port: {{ .Values.redis.service.port }}
+  {{- if .Values.redis.persistence.enabled }}
+  - Persistence: Enabled ({{ .Values.redis.persistence.size }})
+  {{- end }}
+{{- end }}
+
+{{- if .Values.artifacts.persistence.enabled }}
+✓ Artifacts Storage
+  - PVC: {{ include "llamator-mcp.artifacts.pvc.name" . }}
+  - Size: {{ .Values.artifacts.persistence.size }}
+{{- end }}
+
+**************************************************
+SECURITY:
+**************************************************
+
+{{- if .Values.serviceAccount.create }}
+✓ ServiceAccount: {{ include "llamator-mcp.serviceAccountName" . }}
+{{- end }}
+
+{{- if .Values.rbac.create }}
+✓ RBAC: Role and RoleBinding created
+{{- end }}
+
+{{- if .Values.networkPolicy.enabled }}
+✓ NetworkPolicy: Enabled
+{{- end }}
+
+{{- if .Values.security.apiKey.enabled }}
+⚠ API Key Authentication: ENABLED
+  Secret: {{ .Values.security.apiKey.existingSecret }}
+{{- else }}
+⚠ API Key Authentication: DISABLED (not recommended for production)
+{{- end }}
+
+**************************************************
+ACCESS INFORMATION:
+**************************************************
+
+{{- if .Values.ingress.enabled }}
+
+1. External Access (via Ingress):
+
+{{- range .Values.ingress.hosts }}
+   URL: https://{{ .host }}
+{{- end }}
+
+{{- if .Values.ingress.tls }}
+   TLS/HTTPS: Enabled ✓
+{{- else }}
+   ⚠ WARNING: TLS not configured!
+{{- end }}
+
+{{- else }}
+
+1. Internal Access (ClusterIP):
+
+   API Service: {{ include "llamator-mcp.api.fullname" . }}.{{ include "llamator-mcp.namespace" . }}.svc.cluster.local:{{ .Values.api.service.port }}
+
+2. Port Forward (for testing):
+
+   kubectl port-forward -n {{ include "llamator-mcp.namespace" . }} svc/{{ include "llamator-mcp.api.fullname" . }} 8000:{{ .Values.api.service.port }}
+   
+   Then access: http://localhost:8000
+
+{{- end }}
+
+**************************************************
+SECRETS REQUIRED:
+**************************************************
+
+⚠ IMPORTANT: You must create the following secrets manually:
+
+1. OpenAI API Keys:
+   kubectl create secret generic {{ .Values.security.openai.attack.secret.name }} \
+     --from-literal={{ .Values.security.openai.attack.secret.key }}='YOUR_ATTACK_API_KEY' \
+     --from-literal={{ .Values.security.openai.judge.secret.key }}='YOUR_JUDGE_API_KEY' \
+     --from-literal={{ .Values.security.openai.target.secret.key }}='YOUR_TARGET_API_KEY' \
+     --namespace {{ include "llamator-mcp.namespace" . }}
+
+{{- if .Values.security.apiKey.enabled }}
+2. API Key (for endpoint protection):
+   kubectl create secret generic {{ .Values.security.apiKey.existingSecret }} \
+     --from-literal={{ .Values.security.apiKey.secretKey }}='YOUR_SECURE_API_KEY' \
+     --namespace {{ include "llamator-mcp.namespace" . }}
+{{- end }}
+
+**************************************************
+MONITORING:
+**************************************************
+
+Check deployment status:
+  kubectl get all -n {{ include "llamator-mcp.namespace" . }}
+
+View API logs:
+  kubectl logs -n {{ include "llamator-mcp.namespace" . }} -l app.kubernetes.io/component=api -f
+
+View Worker logs:
+  kubectl logs -n {{ include "llamator-mcp.namespace" . }} -l app.kubernetes.io/component=worker -f
+
+View Redis logs:
+  kubectl logs -n {{ include "llamator-mcp.namespace" . }} -l app.kubernetes.io/component=redis -f
+
+**************************************************
+NEXT STEPS:
+**************************************************
+
+1. Create required secrets (see above)
+2. Wait for all pods to become ready:
+   kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=llamator-mcp -n {{ include "llamator-mcp.namespace" . }} --timeout=300s
+3. Test API endpoint:
+   curl https://{{ (index .Values.ingress.hosts 0).host }}/health
+4. Review logs for any errors
+
+**************************************************
+DOCUMENTATION:
+**************************************************
+
+For more information:
+- Helm Chart: /llamator-helm/README.md
+- Project: README.md
+
+**************************************************
+

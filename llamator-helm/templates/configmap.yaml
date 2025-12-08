@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "llamator-mcp.configmap.name" . }}
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+data:
+  # Redis connection
+  LLAMATOR_MCP_REDIS_DSN: {{ include "llamator-mcp.redis.dsn" . | quote }}
+  
+  # Artifacts storage
+  LLAMATOR_MCP_ARTIFACTS_ROOT: "/data/artifacts"
+  
+  # Logging
+  LLAMATOR_MCP_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  LLAMATOR_MCP_UVICORN_LOG_LEVEL: {{ .Values.config.uvicornLogLevel | quote }}
+  
+  # Job execution
+  LLAMATOR_MCP_JOB_TTL_SECONDS: {{ .Values.config.jobTtlSeconds | quote }}
+  LLAMATOR_MCP_RUN_TIMEOUT_SECONDS: {{ .Values.config.runTimeoutSeconds | quote }}
+  LLAMATOR_MCP_REPORT_LANGUAGE: {{ .Values.config.reportLanguage | quote }}
+  
+  # HTTP server
+  LLAMATOR_MCP_HTTP_HOST: {{ .Values.config.httpHost | quote }}
+  LLAMATOR_MCP_HTTP_PORT: {{ .Values.config.httpPort | quote }}
+  
+  # MCP paths
+  LLAMATOR_MCP_MCP_MOUNT_PATH: {{ .Values.config.mcpMountPath | quote }}
+  LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH: {{ .Values.config.mcpStreamableHttpPath | quote }}
+  
+  # OpenAI models configuration (non-sensitive)
+  LLAMATOR_MCP_ATTACK_OPENAI_BASE_URL: {{ .Values.security.openai.attack.baseUrl | quote }}
+  LLAMATOR_MCP_ATTACK_OPENAI_MODEL: {{ .Values.security.openai.attack.model | quote }}
+  LLAMATOR_MCP_ATTACK_OPENAI_TEMPERATURE: {{ .Values.security.openai.attack.temperature | quote }}
+  LLAMATOR_MCP_ATTACK_OPENAI_SYSTEM_PROMPTS: {{ .Values.security.openai.attack.systemPrompts | quote }}
+  
+  LLAMATOR_MCP_JUDGE_OPENAI_BASE_URL: {{ .Values.security.openai.judge.baseUrl | quote }}
+  LLAMATOR_MCP_JUDGE_OPENAI_MODEL: {{ .Values.security.openai.judge.model | quote }}
+  LLAMATOR_MCP_JUDGE_OPENAI_TEMPERATURE: {{ .Values.security.openai.judge.temperature | quote }}
+  LLAMATOR_MCP_JUDGE_OPENAI_SYSTEM_PROMPTS: {{ .Values.security.openai.judge.systemPrompts | quote }}
+  
+  LLAMATOR_MCP_TARGET_OPENAI_BASE_URL: {{ .Values.security.openai.target.baseUrl | quote }}
+  LLAMATOR_MCP_TARGET_OPENAI_MODEL: {{ .Values.security.openai.target.model | quote }}
+  LLAMATOR_MCP_TARGET_OPENAI_TEMPERATURE: {{ .Values.security.openai.target.temperature | quote }}
+  LLAMATOR_MCP_TARGET_OPENAI_SYSTEM_PROMPTS: {{ .Values.security.openai.target.systemPrompts | quote }}
+

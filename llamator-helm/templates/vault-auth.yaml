@@ -1,0 +1,38 @@
+{{- if .Values.vault.enabled }}
+{{- if .Values.vault.vaultSecretsOperator.enabled }}
+---
+# VaultAuth для Vault Secrets Operator
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-vault-auth
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+spec:
+  {{- if eq .Values.vault.vaultSecretsOperator.authMount "kubernetes" }}
+  # Kubernetes auth method
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: {{ .Values.vault.vaultSecretsOperator.role }}
+    serviceAccount: {{ include "llamator-mcp.serviceAccountName" . }}
+    audiences:
+      - vault
+  {{- else if eq .Values.vault.vaultSecretsOperator.authMount "userpass" }}
+  # UserPass auth method
+  method: userpass
+  mount: userpass
+  params:
+    username: {{ .Values.vault.vaultSecretsOperator.role }}
+  userPass:
+    secretRef: {{ .Values.vault.vaultSecretsOperator.userpassSecretRef | default "vault-userpass-auth" }}
+  {{- else }}
+  # Generic auth method
+  method: {{ .Values.vault.vaultSecretsOperator.authMount }}
+  mount: {{ .Values.vault.vaultSecretsOperator.authMount }}
+  {{- end }}
+  vaultConnectionRef: {{ .Values.vault.vaultSecretsOperator.vaultConnectionRef }}
+{{- end }}
+{{- end }}
+

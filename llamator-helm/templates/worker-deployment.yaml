@@ -1,0 +1,139 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llamator-mcp.worker.fullname" . }}
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if not .Values.worker.autoscaling.enabled }}
+  replicas: {{ .Values.worker.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "llamator-mcp.worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if and .Values.vault.enabled .Values.vault.agentInjector.enabled }}
+        # Vault Agent Injector annotations
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.agentInjector.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-openai-keys: {{ .Values.vault.agentInjector.secretPath }}/openai
+        vault.hashicorp.com/agent-inject-template-openai-keys: |
+          {{`{{- with secret `}}"{{ .Values.vault.agentInjector.secretPath }}/openai"{{` -}}
+          export LLAMATOR_MCP_ATTACK_OPENAI_API_KEY="{{ .Data.data.attack_api_key }}"
+          export LLAMATOR_MCP_JUDGE_OPENAI_API_KEY="{{ .Data.data.judge_api_key }}"
+          export LLAMATOR_MCP_TARGET_OPENAI_API_KEY="{{ .Data.data.target_api_key }}"
+          {{- end }}`}}
+        {{- end }}
+        {{- with .Values.worker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "llamator-mcp.worker.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "llamator-mcp.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.worker.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.worker.securityContext | nindent 12 }}
+          command:
+            - arq
+            - llamator_mcp_server.worker_settings.WorkerSettings
+          envFrom:
+            - configMapRef:
+                name: {{ include "llamator-mcp.configmap.name" . }}
+          env:
+            # Sensitive environment variables from secrets
+            {{- if .Values.security.apiKey.enabled }}
+            - name: LLAMATOR_MCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.apiKey.existingSecret }}
+                  key: {{ .Values.security.apiKey.secretKey }}
+            {{- end }}
+            # OpenAI API keys
+            - name: LLAMATOR_MCP_ATTACK_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.openai.attack.secret.name }}
+                  key: {{ .Values.security.openai.attack.secret.key }}
+            - name: LLAMATOR_MCP_JUDGE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.openai.judge.secret.name }}
+                  key: {{ .Values.security.openai.judge.secret.key }}
+            - name: LLAMATOR_MCP_TARGET_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.openai.target.secret.name }}
+                  key: {{ .Values.security.openai.target.secret.key }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.worker.livenessProbe.enabled }}
+          livenessProbe:
+            {{- toYaml .Values.worker.livenessProbe.exec | nindent 12 }}
+            initialDelaySeconds: {{ .Values.worker.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.worker.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.worker.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.worker.livenessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: artifacts
+              mountPath: /data/artifacts
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: artifacts
+          {{- if .Values.artifacts.useEmptyDir }}
+          emptyDir: {}
+          {{- else if .Values.artifacts.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "llamator-mcp.artifacts.pvc.name" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.worker.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "llamator-mcp.worker.selectorLabels" . | nindent 20 }}
+                topologyKey: {{ .Values.worker.podAntiAffinity.topologyKey }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+

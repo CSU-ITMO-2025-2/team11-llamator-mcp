@@ -11,6 +11,7 @@ MCP server for llamator: automate LLM red teaming workflows
 - [What this server does](#what-this-server-does)
 - [Architecture](#architecture)
 - [Quick start (Docker Compose)](#quick-start-docker-compose)
+- [Kubernetes Deployment (Helm)](#kubernetes-deployment-helm)
 - [Configuration (env)](#configuration-env)
 - [HTTP API](#http-api)
 - [MCP API (Streamable HTTP)](#mcp-api-streamable-http)
@@ -72,6 +73,49 @@ The compose stack includes:
 Expected external dependency:
 
 - An **OpenAI-compatible** endpoint for attack/judge/tested models (e.g. LM Studio, vLLM, etc.), configured via env.
+
+## Kubernetes Deployment (Helm)
+
+For production deployments, we provide a comprehensive **Helm chart** with full Kubernetes support.
+
+### Quick Start with Helm
+
+```bash
+# 1. Create namespace
+kubectl create namespace llamator-mcp
+
+# 2. Create secrets
+kubectl create secret generic llamator-openai-keys \
+  --from-literal=attack-api-key='YOUR_API_KEY' \
+  --from-literal=judge-api-key='YOUR_API_KEY' \
+  --from-literal=target-api-key='YOUR_API_KEY' \
+  --namespace llamator-mcp
+
+# 3. Install Helm chart
+helm install llamator ./llamator-helm -n llamator-mcp
+
+# 4. Check status
+kubectl get pods -n llamator-mcp
+```
+
+### Monitoring
+
+```bash
+# Check deployment status
+kubectl get all -n llamator-mcp
+
+# View API logs
+kubectl logs -n llamator-mcp -l app.kubernetes.io/component=api -f
+
+# View Worker logs
+kubectl logs -n llamator-mcp -l app.kubernetes.io/component=worker -f
+
+# Check HPA status
+kubectl get hpa -n llamator-mcp
+
+# View metrics
+kubectl top pods -n llamator-mcp
+```
 
 ## Configuration (env)
 
