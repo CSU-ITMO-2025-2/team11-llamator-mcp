@@ -1,0 +1,49 @@
+{{- if and .Values.monitoring.serviceMonitor.enabled (or .Values.api.enabled .Values.worker.enabled) }}
+---
+# ServiceMonitor for Prometheus Operator
+# Enables automatic scraping of metrics from API pods
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-api
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # Selector для Service
+  selector:
+    matchLabels:
+      {{- include "llamator-mcp.api.selectorLabels" . | nindent 6 }}
+  
+  # Namespace где искать Service
+  namespaceSelector:
+    matchNames:
+      - {{ include "llamator-mcp.namespace" . }}
+  
+  # Endpoints для scraping
+  endpoints:
+    - port: http
+      path: {{ .Values.monitoring.serviceMonitor.path | default "/metrics" }}
+      interval: {{ .Values.monitoring.serviceMonitor.interval | default "30s" }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout | default "10s" }}
+      {{- with .Values.monitoring.serviceMonitor.scheme }}
+      scheme: {{ . }}
+      {{- end }}
+      {{- with .Values.monitoring.serviceMonitor.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.serviceMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+{{- end }}

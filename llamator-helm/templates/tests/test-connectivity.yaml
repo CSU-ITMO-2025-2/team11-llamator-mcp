@@ -1,0 +1,58 @@
+{{- if and .Values.api.enabled .Values.worker.enabled }}
+---
+# Helm Test: проверка связности между компонентами
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-test-connectivity
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "llamator-mcp.serviceAccountName" . }}
+  containers:
+    - name: test
+      image: curlimages/curl:8.5.0
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing component connectivity..."
+          
+          # Test API service DNS resolution
+          echo "Testing API service DNS..."
+          if nslookup {{ include "llamator-mcp.api.fullname" . }}.{{ include "llamator-mcp.namespace" . }}.svc.cluster.local > /dev/null 2>&1; then
+            echo "✓ API service DNS resolution successful"
+          else
+            echo "✗ API service DNS resolution failed"
+            exit 1
+          fi
+          
+          {{- if .Values.redis.enabled }}
+          # Test Redis service DNS resolution
+          echo "Testing Redis service DNS..."
+          if nslookup {{ include "llamator-mcp.redis.fullname" . }}.{{ include "llamator-mcp.namespace" . }}.svc.cluster.local > /dev/null 2>&1; then
+            echo "✓ Redis service DNS resolution successful"
+          else
+            echo "✗ Redis service DNS resolution failed"
+            exit 1
+          fi
+          {{- end }}
+          
+          # Test API endpoint connectivity
+          echo "Testing API endpoint connectivity..."
+          if nc -zv {{ include "llamator-mcp.api.fullname" . }} {{ .Values.api.service.port }} 2>&1 | grep -q succeeded; then
+            echo "✓ API endpoint is reachable"
+          else
+            echo "✗ API endpoint is not reachable"
+            exit 1
+          fi
+          
+          echo "✓ All connectivity tests passed!"
+          exit 0
+{{- end }}

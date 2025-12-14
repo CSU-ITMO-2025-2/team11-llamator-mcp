@@ -1,0 +1,87 @@
+{{- if .Values.limitRange.enabled }}
+---
+# LimitRange для установки дефолтных лимитов ресурсов
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-limits
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+spec:
+  limits:
+    # Limits для контейнеров
+    - type: Container
+      {{- if or .Values.limitRange.container.default.cpu .Values.limitRange.container.default.memory }}
+      default:
+        {{- if .Values.limitRange.container.default.cpu }}
+        cpu: {{ .Values.limitRange.container.default.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.container.default.memory }}
+        memory: {{ .Values.limitRange.container.default.memory }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.limitRange.container.defaultRequest.cpu .Values.limitRange.container.defaultRequest.memory }}
+      defaultRequest:
+        {{- if .Values.limitRange.container.defaultRequest.cpu }}
+        cpu: {{ .Values.limitRange.container.defaultRequest.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.container.defaultRequest.memory }}
+        memory: {{ .Values.limitRange.container.defaultRequest.memory }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.limitRange.container.max.cpu .Values.limitRange.container.max.memory }}
+      max:
+        {{- if .Values.limitRange.container.max.cpu }}
+        cpu: {{ .Values.limitRange.container.max.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.container.max.memory }}
+        memory: {{ .Values.limitRange.container.max.memory }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.limitRange.container.min.cpu .Values.limitRange.container.min.memory }}
+      min:
+        {{- if .Values.limitRange.container.min.cpu }}
+        cpu: {{ .Values.limitRange.container.min.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.container.min.memory }}
+        memory: {{ .Values.limitRange.container.min.memory }}
+        {{- end }}
+      {{- end }}
+
+    # Limits для PVC
+    {{- if or .Values.limitRange.pvc.max.storage .Values.limitRange.pvc.min.storage }}
+    - type: PersistentVolumeClaim
+      {{- if .Values.limitRange.pvc.max.storage }}
+      max:
+        storage: {{ .Values.limitRange.pvc.max.storage }}
+      {{- end }}
+      {{- if .Values.limitRange.pvc.min.storage }}
+      min:
+        storage: {{ .Values.limitRange.pvc.min.storage }}
+      {{- end }}
+    {{- end }}
+
+    # Limits для Pods
+    {{- if or .Values.limitRange.pod.max.cpu .Values.limitRange.pod.max.memory }}
+    - type: Pod
+      {{- if or .Values.limitRange.pod.max.cpu .Values.limitRange.pod.max.memory }}
+      max:
+        {{- if .Values.limitRange.pod.max.cpu }}
+        cpu: {{ .Values.limitRange.pod.max.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.pod.max.memory }}
+        memory: {{ .Values.limitRange.pod.max.memory }}
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.limitRange.pod.min.cpu .Values.limitRange.pod.min.memory }}
+      min:
+        {{- if .Values.limitRange.pod.min.cpu }}
+        cpu: {{ .Values.limitRange.pod.min.cpu }}
+        {{- end }}
+        {{- if .Values.limitRange.pod.min.memory }}
+        memory: {{ .Values.limitRange.pod.min.memory }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+{{- end }}

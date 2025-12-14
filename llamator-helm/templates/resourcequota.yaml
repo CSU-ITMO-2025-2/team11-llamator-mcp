@@ -1,0 +1,48 @@
+{{- if .Values.resourceQuota.enabled }}
+---
+# ResourceQuota для ограничения ресурсов в namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "llamator-mcp.fullname" . }}-quota
+  namespace: {{ include "llamator-mcp.namespace" . }}
+  labels:
+    {{- include "llamator-mcp.labels" . | nindent 4 }}
+spec:
+  hard:
+    {{- if .Values.resourceQuota.hard.requests.cpu }}
+    requests.cpu: {{ .Values.resourceQuota.hard.requests.cpu | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.requests.memory }}
+    requests.memory: {{ .Values.resourceQuota.hard.requests.memory | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.limits.cpu }}
+    limits.cpu: {{ .Values.resourceQuota.hard.limits.cpu | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.limits.memory }}
+    limits.memory: {{ .Values.resourceQuota.hard.limits.memory | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.persistentvolumeclaims }}
+    persistentvolumeclaims: {{ .Values.resourceQuota.hard.persistentvolumeclaims | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.pods }}
+    pods: {{ .Values.resourceQuota.hard.pods | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.services }}
+    services: {{ .Values.resourceQuota.hard.services | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.secrets }}
+    secrets: {{ .Values.resourceQuota.hard.secrets | quote }}
+    {{- end }}
+    {{- if .Values.resourceQuota.hard.configmaps }}
+    configmaps: {{ .Values.resourceQuota.hard.configmaps | quote }}
+    {{- end }}
+  {{- with .Values.resourceQuota.scopeSelector }}
+  scopeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.resourceQuota.scopes }}
+  scopes:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
