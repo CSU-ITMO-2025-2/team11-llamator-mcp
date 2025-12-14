@@ -122,6 +122,26 @@ class McpServerSettings(_SettingsBase):
     mcp_streamable_http_path: str = Field(default="/", min_length=1, max_length=200)
 
 
+class S3Settings(_SettingsBase):
+    """S3-compatible storage settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="S3_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    access_key_id: str = Field(default="", max_length=500)
+    access_key: str = Field(default="", max_length=500)
+
+    @field_validator("access_key_id", "access_key")
+    @classmethod
+    def _strip_optional_s3_credentials(cls, v: str) -> str:
+        return v.strip()
+
+
 class Settings(
     RedisSettings,
     ArtifactsSettings,
@@ -132,6 +152,7 @@ class Settings(
     JobExecutionSettings,
     HttpServerSettings,
     McpServerSettings,
+    S3Settings,
 ):
     """
     Application settings.
@@ -160,6 +181,8 @@ class Settings(
     :param http_port: Bind port for the HTTP server.
     :param mcp_mount_path: Path where the MCP ASGI app is mounted in FastAPI.
     :param mcp_streamable_http_path: Streamable HTTP path exposed by the MCP ASGI app.
+    :param access_key_id: S3-compatible storage access key ID (optional, for future use).
+    :param access_key: S3-compatible storage secret access key (optional, for future use).
     :raises ValueError: If environment values are invalid.
     """
 

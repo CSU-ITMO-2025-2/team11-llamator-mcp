@@ -3,7 +3,7 @@
 {{- if .Values.vault.vaultSecretsOperator.createConnection }}
 ---
 # VaultConnection для подключения к Vault серверу
-apiVersion: secrets.hashicorp.com/v1beta1
+apiVersion: external-secrets.io/v1beta1
 kind: VaultConnection
 metadata:
   name: {{ .Values.vault.vaultSecretsOperator.vaultConnectionRef }}

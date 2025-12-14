@@ -2,7 +2,7 @@
 {{- if .Values.vault.vaultSecretsOperator.enabled }}
 ---
 # VaultAuth для Vault Secrets Operator
-apiVersion: secrets.hashicorp.com/v1beta1
+apiVersion: external-secrets.io/v1beta1
 kind: VaultAuth
 metadata:
   name: {{ include "llamator-mcp.fullname" . }}-vault-auth

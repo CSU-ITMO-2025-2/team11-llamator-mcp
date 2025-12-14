@@ -86,9 +86,9 @@ kubectl create namespace llamator-mcp
 
 # 2. Create secrets
 kubectl create secret generic llamator-openai-keys \
-  --from-literal=attack-api-key='YOUR_API_KEY' \
-  --from-literal=judge-api-key='YOUR_API_KEY' \
-  --from-literal=target-api-key='YOUR_API_KEY' \
+  --from-literal=LLAMATOR_MCP_ATTACK_OPENAI_API_KEY='YOUR_API_KEY' \
+  --from-literal=LLAMATOR_MCP_JUDGE_OPENAI_API_KEY='YOUR_API_KEY' \
+  --from-literal=LLAMATOR_MCP_TARGET_OPENAI_API_KEY='YOUR_API_KEY' \
   --namespace llamator-mcp
 
 # 3. Install Helm chart
