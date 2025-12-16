@@ -1,0 +1,87 @@
+name: Update Helm Repository
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches:
+      - main
+      - master
+
+jobs:
+  update-helm:
+    runs-on: ubuntu-latest
+    # Only run if the build workflow succeeded and was not a PR
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event != 'pull_request'
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+
+      - name: Get image tag
+        id: get-tag
+        run: |
+          if [[ "${{ github.event.workflow_run.head_branch }}" == "main" || "${{ github.event.workflow_run.head_branch }}" == "master" ]]; then
+            # For main/master branch use sha-based tag
+            SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+            echo "tag=sha-${SHA}" >> $GITHUB_OUTPUT
+            echo "Using sha-based tag: sha-${SHA}"
+          else
+            echo "tag=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout Helm repository
+        uses: actions/checkout@v4
+        with:
+          repository: CSU-ITMO-2025-2/team11-helm
+          token: ${{ secrets.HELM_REPO_TOKEN }}
+          path: helm-repo
+
+      - name: Update image tag in Helm values
+        run: |
+          cd helm-repo
+          
+          # Find and update the image tag in values.yaml
+          # Adjust the path based on your Helm chart structure
+          VALUES_FILE="values.yaml"
+          
+          if [ -f "$VALUES_FILE" ]; then
+            # Update the image tag using yq or sed
+            # Using sed for simplicity - adjust the pattern based on your values.yaml structure
+            sed -i "s|tag:.*|tag: \"${{ steps.get-tag.outputs.tag }}\"|g" "$VALUES_FILE"
+            echo "Updated $VALUES_FILE with tag: ${{ steps.get-tag.outputs.tag }}"
+            cat "$VALUES_FILE"
+          else
+            echo "::warning::$VALUES_FILE not found. Looking for chart directories..."
+            
+            # Try to find values.yaml in subdirectories
+            find . -name "values.yaml" -type f | while read -r file; do
+              echo "Found: $file"
+              sed -i "s|tag:.*|tag: \"${{ steps.get-tag.outputs.tag }}\"|g" "$file"
+              echo "Updated $file"
+            done
+          fi
+
+      - name: Commit and push changes
+        run: |
+          cd helm-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add -A
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update image tag to ${{ steps.get-tag.outputs.tag }}"
+            git push
+            echo "## Helm Repository Updated :rocket:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**New image tag:** ${{ steps.get-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit SHA:** ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
