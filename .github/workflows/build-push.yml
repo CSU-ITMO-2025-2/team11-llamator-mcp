@@ -1,16 +1,16 @@
 name: Build and Push Docker Image
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI - Lint and Test"]
+    types:
+      - completed
     branches:
+      - develop
       - main
-      - master
+  push:
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
-      - master
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +19,11 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Run only if CI succeeded (for workflow_run) or for tag pushes
+    if: >
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event != 'pull_request')
     permissions:
       contents: read
       packages: write

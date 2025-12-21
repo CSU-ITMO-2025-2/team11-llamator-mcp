@@ -6,8 +6,8 @@ on:
     types:
       - completed
     branches:
+      - develop
       - main
-      - master
 
 jobs:
   update-helm:
@@ -24,8 +24,8 @@ jobs:
       - name: Get image tag
         id: get-tag
         run: |
-          if [[ "${{ github.event.workflow_run.head_branch }}" == "main" || "${{ github.event.workflow_run.head_branch }}" == "master" ]]; then
-            # For main/master branch use sha-based tag
+          if [[ "${{ github.event.workflow_run.head_branch }}" == "develop" || "${{ github.event.workflow_run.head_branch }}" == "main" ]]; then
+            # For develop/main branch use sha-based tag
             SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
             echo "tag=sha-${SHA}" >> $GITHUB_OUTPUT
             echo "Using sha-based tag: sha-${SHA}"
@@ -40,29 +40,31 @@ jobs:
           token: ${{ secrets.HELM_REPO_TOKEN }}
           path: helm-repo
 
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
       - name: Update image tag in Helm values
         run: |
           cd helm-repo
           
           # Find and update the image tag in values.yaml
-          # Adjust the path based on your Helm chart structure
           VALUES_FILE="values.yaml"
+          NEW_TAG="${{ steps.get-tag.outputs.tag }}"
           
           if [ -f "$VALUES_FILE" ]; then
-            # Update the image tag using yq or sed
-            # Using sed for simplicity - adjust the pattern based on your values.yaml structure
-            sed -i "s|tag:.*|tag: \"${{ steps.get-tag.outputs.tag }}\"|g" "$VALUES_FILE"
-            echo "Updated $VALUES_FILE with tag: ${{ steps.get-tag.outputs.tag }}"
+            # Update the image tag using yq (safe YAML editing)
+            yq -i '.image.tag = "'"$NEW_TAG"'"' "$VALUES_FILE"
+            echo "Updated $VALUES_FILE with tag: $NEW_TAG"
             cat "$VALUES_FILE"
           else
             echo "::warning::$VALUES_FILE not found. Looking for chart directories..."
             
             # Try to find values.yaml in subdirectories
-            find . -name "values.yaml" -type f | while read -r file; do
+            while IFS= read -r -d '' file; do
               echo "Found: $file"
-              sed -i "s|tag:.*|tag: \"${{ steps.get-tag.outputs.tag }}\"|g" "$file"
+              yq -i '.image.tag = "'"$NEW_TAG"'"' "$file"
               echo "Updated $file"
-            done
+            done < <(find . -name "values.yaml" -type f -print0)
           fi
 
       - name: Commit and push changes

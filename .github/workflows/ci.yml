@@ -3,12 +3,12 @@ name: CI - Lint and Test
 on:
   push:
     branches:
+      - develop
       - main
-      - master
   pull_request:
     branches:
+      - develop
       - main
-      - master
 
 jobs:
   lint:
@@ -44,10 +44,10 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run Ruff linter
-        run: poetry run ruff check src/
+        run: poetry run ruff check src/ tests/
 
       - name: Run Ruff formatter check
-        run: poetry run ruff format --check src/
+        run: poetry run ruff format --check src/ tests/
 
   test:
     runs-on: ubuntu-latest
