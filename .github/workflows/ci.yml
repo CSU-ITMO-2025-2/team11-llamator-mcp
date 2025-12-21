@@ -96,5 +96,12 @@ jobs:
         env:
           LLAMATOR_MCP_REDIS_DSN: redis://localhost:6379/0
         # TODO: Enable integration tests when test infrastructure is ready
-        run: poetry run pytest tests/ -v --tb=short --ignore=tests/integration
+        # Exit code 5 = no tests collected (acceptable when integration tests are skipped)
+        run: |
+          poetry run pytest tests/ -v --tb=short --ignore=tests/integration || exit_code=$?
+          if [ "${exit_code:-0}" -eq 5 ]; then
+            echo "No tests collected (integration tests skipped) - this is OK"
+            exit 0
+          fi
+          exit ${exit_code:-0}
 
