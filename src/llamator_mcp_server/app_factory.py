@@ -7,6 +7,7 @@ from typing import AsyncIterator
 from arq import create_pool
 from arq.connections import ArqRedis
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 from redis.asyncio import Redis
 
 from llamator_mcp_server.api.asgi_wrappers import _ApiKeyAsgiWrapper, _McpSseToJsonWrapper
@@ -63,4 +64,9 @@ def create_app() -> FastAPI:
 
             yield
 
-    return FastAPI(title="llamator-mcp-server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="llamator-mcp-server", version="0.1.0", lifespan=lifespan)
+
+    # Prometheus metrics at /metrics
+    Instrumentator().instrument(app).expose(app)
+
+    return app
