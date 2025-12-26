@@ -50,7 +50,7 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
     """
     logger: logging.Logger = ctx["logger"]
     store: JobStore = ctx["store"]
-
+    # settings: Settings = ctx["settings"]
     job_id: str = str(payload["job_id"])
 
     await store.update_status(job_id, JobStatus.RUNNING)
