@@ -1,3 +1,4 @@
+# team11-llamator-mcp/tests/integration/test_mcp_api.py
 from __future__ import annotations
 
 import json
@@ -5,7 +6,8 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import McpJsonRpcClient, McpSession
+from tests.conftest import McpJsonRpcClient
+from tests.conftest import McpSession
 
 
 def _tool_names(tools: list[dict[str, Any]]) -> set[str]:
@@ -63,6 +65,31 @@ def _assert_start_testing_result_schema(payload: Any) -> None:
             assert isinstance(v2, int), f"Expected int inner value, got {type(v2)}"
 
 
+def _assert_mcp_run_result_schema(payload: Any) -> None:
+    """
+    Assert MCP tool run result schema.
+
+    Expected payload shape:
+    - job_id: str (uuid4 hex, 32 chars)
+    - artifacts_download_url: str | None (present for S3 backend)
+    - aggregated: dict[str, dict[str, int]]
+    """
+    assert isinstance(payload, dict), f"Expected dict, got {type(payload)}"
+    assert payload, "Expected non-empty MCP tool result dict."
+
+    job_id: Any = payload.get("job_id")
+    assert isinstance(job_id, str), f"Expected job_id to be str, got {type(job_id)}"
+    assert len(job_id) == 32, f"Expected job_id length 32, got {len(job_id)}"
+
+    artifacts_url: Any = payload.get("artifacts_download_url")
+    if artifacts_url is not None:
+        assert isinstance(artifacts_url, str), f"Expected artifacts_download_url to be str, got {type(artifacts_url)}"
+        assert artifacts_url.strip(), "Expected non-empty artifacts_download_url when provided."
+
+    aggregated: Any = payload.get("aggregated")
+    _assert_start_testing_result_schema(aggregated)
+
+
 def test_mcp_tools_list_contains_llamator_tools(mcp_client: McpJsonRpcClient, mcp_session: McpSession) -> None:
     tools: list[dict[str, Any]] = mcp_client.list_tools(mcp_session)
     names: set[str] = _tool_names(tools)
@@ -94,7 +121,7 @@ def test_mcp_create_run_returns_start_testing_result(
 
     created_payload: dict[str, Any] = created_struct or created_fallback or {}
 
-    _assert_start_testing_result_schema(created_payload)
+    _assert_mcp_run_result_schema(created_payload)
 
     with capsys.disabled():
         print(json.dumps(created_payload, ensure_ascii=False, indent=2, sort_keys=True))

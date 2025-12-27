@@ -26,7 +26,9 @@ def parse_system_prompts(raw: str) -> tuple[str, ...] | None:
             raise ValueError("Invalid JSON for system prompts.") from e
         if not isinstance(parsed, list):
             raise ValueError("System prompts JSON must be an array.")
-        cleaned_json: list[str] = [str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()]
+        if any(not isinstance(x, str) for x in parsed):
+            raise ValueError("System prompts JSON must be an array of strings.")
+        cleaned_json: list[str] = [x.strip() for x in parsed if x.strip()]
         return tuple(cleaned_json) or None
 
     parts: list[str] = [p.strip() for p in val.splitlines() if p.strip()]

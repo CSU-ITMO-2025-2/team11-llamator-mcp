@@ -5,7 +5,12 @@ from enum import Enum
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import HttpUrl
+from pydantic import field_validator
+from pydantic import model_validator
 
 
 class JobStatus(str, Enum):
@@ -293,3 +298,45 @@ class LlamatorJobInfo(BaseModel):
     request: dict[str, object]
     result: LlamatorJobResult | None = None
     error: LlamatorJobError | None = None
+
+
+class ArtifactFileInfo(BaseModel):
+    """
+    Artifact file metadata.
+
+    :param path: Relative artifact path inside the job artifacts root.
+    :param size_bytes: File size in bytes.
+    :param mtime: File modification time as a Unix timestamp in seconds.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    path: str = Field(min_length=1, max_length=4000, description="Relative path inside job artifacts root.")
+    size_bytes: int = Field(ge=0, description="File size in bytes.")
+    mtime: float = Field(description="Unix timestamp in seconds.")
+
+
+class ArtifactsListResponse(BaseModel):
+    """
+    Artifacts list endpoint response.
+
+    :param job_id: Job identifier.
+    :param files: Artifact files metadata list.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    job_id: str = Field(min_length=1, max_length=200, description="Job identifier.")
+    files: list[ArtifactFileInfo] = Field(default_factory=list, description="Artifact files metadata list.")
+
+
+class HealthResponse(BaseModel):
+    """
+    Healthcheck response.
+
+    :param status: Service status.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["ok"] = Field(description="Service status.")

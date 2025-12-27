@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
-from typing import Any, Literal
-
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+from pathlib import PurePosixPath
+from typing import Any
+from typing import Literal
 
 from llamator_mcp_server.utils.env import parse_system_prompts
+from pydantic import Field
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 
 def _parse_system_prompts_value(v: Any) -> tuple[str, ...] | None:
@@ -26,11 +29,15 @@ def _parse_system_prompts_value(v: Any) -> tuple[str, ...] | None:
         return None
 
     if isinstance(v, tuple):
-        parts: list[str] = [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        if any(not isinstance(p, str) for p in v):
+            raise ValueError("System prompts value must be a string, a list/tuple of strings, or null.")
+        parts: list[str] = [p.strip() for p in v if p.strip()]
         return tuple(parts) or None
 
     if isinstance(v, list):
-        parts2: list[str] = [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        if any(not isinstance(p, str) for p in v):
+            raise ValueError("System prompts value must be a string, a list/tuple of strings, or null.")
+        parts2: list[str] = [p.strip() for p in v if p.strip()]
         return tuple(parts2) or None
 
     if isinstance(v, str):
@@ -61,6 +68,23 @@ class ArtifactsSettings(_SettingsBase):
     """Artifacts storage settings."""
 
     artifacts_root: Path = Field(default=Path("/data/artifacts"))
+
+
+class ArtifactsBackendSettings(_SettingsBase):
+    """Artifacts backend selection settings."""
+
+    artifacts_backend: Literal["local", "s3", "auto"] = Field(default="auto")
+
+
+class S3Settings(_SettingsBase):
+    """S3-compatible storage settings."""
+
+    s3_endpoint_url: str | None = Field(default=None, max_length=2000)
+    s3_bucket: str | None = Field(default=None, max_length=300)
+    s3_region: str | None = Field(default=None, max_length=100)
+    s3_access_key_id: str | None = Field(default=None, max_length=300)
+    s3_secret_access_key: str | None = Field(default=None, max_length=500)
+    s3_key_prefix: str = Field(default="", max_length=1000)
 
 
 class ApiSecuritySettings(_SettingsBase):
@@ -125,6 +149,8 @@ class McpServerSettings(_SettingsBase):
 class Settings(
     RedisSettings,
     ArtifactsSettings,
+    ArtifactsBackendSettings,
+    S3Settings,
     ApiSecuritySettings,
     LoggingSettings,
     AttackModelSettings,
@@ -140,6 +166,13 @@ class Settings(
 
     :param redis_dsn: Redis DSN used by the HTTP server and ARQ worker.
     :param artifacts_root: Root directory for job artifacts storage.
+    :param artifacts_backend: Artifacts backend selection (local/s3/auto).
+    :param s3_endpoint_url: S3 endpoint URL.
+    :param s3_bucket: S3 bucket name.
+    :param s3_region: S3 region.
+    :param s3_access_key_id: S3 access key ID.
+    :param s3_secret_access_key: S3 secret access key.
+    :param s3_key_prefix: Optional key prefix inside S3 bucket.
     :param api_key: API key for protecting HTTP/MCP endpoints (empty disables auth).
     :param log_level: Root Python logging level (for the app and worker).
     :param uvicorn_log_level: Uvicorn log level (used by the HTTP entrypoint).
@@ -180,9 +213,21 @@ class Settings(
             raise ValueError("Value must be non-empty.")
         return val
 
-    @field_validator("api_key", "attack_openai_api_key", "judge_openai_api_key")
+    @field_validator(
+        "api_key",
+        "attack_openai_api_key",
+        "judge_openai_api_key",
+        "s3_endpoint_url",
+        "s3_bucket",
+        "s3_region",
+        "s3_access_key_id",
+        "s3_secret_access_key",
+        "s3_key_prefix",
+    )
     @classmethod
-    def _strip_optional_secret(cls, v: str) -> str:
+    def _strip_optional(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         return v.strip()
 
     @field_validator("attack_openai_system_prompts", "judge_openai_system_prompts", mode="before")
