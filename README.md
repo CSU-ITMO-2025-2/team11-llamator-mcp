@@ -39,16 +39,22 @@ Main usage flow:
 Components:
 
 - **API container** (FastAPI + MCP ASGI app):
-  - Validates input (`validate_test_specs`).
-  - Enqueues ARQ job (`run_llamator_job`).
-  - Serves HTTP endpoints under `/v1/...`.
-  - Mounts MCP app under `LLAMATOR_MCP_MCP_MOUNT_PATH` (default: `/mcp`).
+    - Validates input (`validate_test_specs`).
+    - Enqueues ARQ job (`run_llamator_job`).
+    - Serves HTTP endpoints under `/v1/...`.
+    - Mounts MCP app under `LLAMATOR_MCP_MCP_MOUNT_PATH` (default: `/mcp`).
+    - Protects both HTTP and MCP endpoints with optional API key via header `X-API-Key`.
+    - Converts single-message SSE responses to `application/json` for MCP POST requests when upstream returns
+      `text/event-stream`.
 - **Worker container** (ARQ):
-  - Resolves test plan (presets + explicit test specs).
-  - Runs LLAMATOR (`llamator.start_testing`) in a thread.
-  - Persists `queued → running → succeeded/failed` state into Redis.
+    - Resolves test plan (presets + explicit test specs).
+    - Runs LLAMATOR (`llamator.start_testing`) in a thread.
+    - Persists `queued → running → succeeded/failed` state into Redis.
+    - Handles artifacts lifecycle:
+        - local backend: leaves artifacts on the shared volume
+        - S3 backend: archives artifacts to `artifacts.zip`, uploads to S3 (presigned PUT), then cleans local directory
 - **Redis**:
-  - Stores job metadata, redacted request, results, errors (TTL-based).
+    - Stores job metadata, redacted request, results, errors (TTL-based).
 
 Security:
 
@@ -87,6 +93,34 @@ All service settings are read from environment variables prefixed with `LLAMATOR
 - `LLAMATOR_MCP_ARTIFACTS_ROOT` (default: `/data/artifacts`)  
   Root directory where job artifacts are stored (one subdir per `job_id`).
 
+### Artifacts backend
+
+- `LLAMATOR_MCP_ARTIFACTS_BACKEND` (default: `auto`, allowed: `local|s3|auto`)  
+  Artifacts backend selection:
+    - `local`: serve artifacts from filesystem (`LLAMATOR_MCP_ARTIFACTS_ROOT`)
+    - `s3`: store artifacts in S3-compatible storage (requires S3 env vars)
+    - `auto`: use S3 if fully configured; otherwise fall back to local
+
+### S3-compatible storage (when backend is `s3` or `auto`)
+
+Required:
+
+- `LLAMATOR_MCP_S3_ENDPOINT_URL` (e.g. `https://s3.example.com`)
+- `LLAMATOR_MCP_S3_BUCKET`
+- `LLAMATOR_MCP_S3_ACCESS_KEY_ID`
+- `LLAMATOR_MCP_S3_SECRET_ACCESS_KEY`
+
+Optional:
+
+- `LLAMATOR_MCP_S3_REGION` (defaults to `us-east-1` internally if empty)
+- `LLAMATOR_MCP_S3_KEY_PREFIX` (default: empty)  
+  Key prefix under the bucket (e.g. `llamator-mcp`).
+
+Behavior:
+
+- Worker zips job artifacts into `artifacts.zip` and uploads it to S3.
+- HTTP/MCP downloads return **307 redirect** to a presigned GET URL (no direct file streaming from the API container).
+
 ### API security
 
 - `LLAMATOR_MCP_API_KEY` (default: empty)  
@@ -101,6 +135,7 @@ All service settings are read from environment variables prefixed with `LLAMATOR
 - `LLAMATOR_MCP_ATTACK_OPENAI_SYSTEM_PROMPTS` (default: built-in prompt)
 
 `*_SYSTEM_PROMPTS` accepts:
+
 - JSON array (preferred), e.g. `["Prompt 1", "Prompt 2"]`
 - or a newline-separated string
 
@@ -117,7 +152,7 @@ All service settings are read from environment variables prefixed with `LLAMATOR
 - `LLAMATOR_MCP_JOB_TTL_SECONDS` (default: `604800`)  
   TTL for job keys in Redis.
 - `LLAMATOR_MCP_RUN_TIMEOUT_SECONDS` (default: `3600`)  
-  ARQ per-job timeout (worker side).
+  ARQ per-job timeout (worker side) and MCP `create_llamator_run` await timeout.
 - `LLAMATOR_MCP_REPORT_LANGUAGE` (default: `en`, allowed: `en|ru`)  
   Default report language used in merged run config.
 
@@ -153,6 +188,7 @@ All routes are under `/v1`. If `LLAMATOR_MCP_API_KEY` is set, add: `X-API-Key: <
 ### Health
 
 - `GET /v1/health` → `{"status":"ok"}`
+- `GET /health` → `{"status":"ok"}`
 
 ### Create a test run
 
@@ -171,6 +207,7 @@ Response (`200`):
 ```
 
 Errors:
+
 - `400` on validation failure (e.g. duplicate parameter names).
 - `401` if API key is required and invalid/missing.
 
@@ -179,12 +216,14 @@ Errors:
 - `GET /v1/tests/runs/{job_id}` → `LlamatorJobInfo`
 
 Contains:
+
 - `status`: `queued | running | succeeded | failed`
 - timestamps
 - `request`: **redacted** request snapshot (no API keys; only `api_key_present: true|false`)
 - optional `result` or `error`
 
 Errors:
+
 - `404` if job does not exist.
 
 ### List artifacts
@@ -202,17 +241,32 @@ Response:
 }
 ```
 
-If the directory does not exist yet: `files: []`.
+Notes:
+
+- If the job exists but has no artifacts yet: `files: []`.
+- For S3 backend this lists object metadata under the job prefix (path/size/mtime).
+
+Errors:
+
+- `404` if job does not exist.
+- `502` if artifacts backend is unavailable.
 
 ### Download artifact
 
-- `GET /v1/tests/runs/{job_id}/artifacts/{path}` → file response
+- `GET /v1/tests/runs/{job_id}/artifacts/{path}` → file download
 
-The server enforces a safe join to prevent path traversal (`..` escapes are rejected).
+Behavior depends on artifacts backend:
+
+- **local backend**: returns `200` with file content (`FileResponse`)
+- **S3 backend**: returns `307` redirect to a presigned URL (`RedirectResponse`)
+
+The server enforces safe relative paths (`..` escapes are rejected).
 
 Errors:
+
 - `400` invalid path
 - `404` missing job or missing file
+- `502` artifacts backend error
 
 ## MCP API (Streamable HTTP)
 
@@ -221,23 +275,32 @@ The MCP server is mounted under `LLAMATOR_MCP_MCP_MOUNT_PATH` and uses **Streama
 Tools exposed:
 
 - `create_llamator_run`
-  - Input: `LlamatorTestRunRequest`
-  - Behavior: submit job and **await completion** (within `LLAMATOR_MCP_RUN_TIMEOUT_SECONDS`)
-  - Output: aggregated result dict (see below)
+    - Input: `LlamatorTestRunRequest`
+    - Behavior: submit job and **await completion** (within `LLAMATOR_MCP_RUN_TIMEOUT_SECONDS`)
+    - Output: aggregated result dict + artifacts URL (S3 backend)
 - `get_llamator_run`
-  - Input: `job_id: str`
-  - Behavior: fetch existing job and return aggregated result **only if finished**
-  - Output: aggregated result dict
+    - Input: `job_id: str`
+    - Behavior: fetch existing job and return aggregated result **only if finished**
+    - Output: aggregated result dict + artifacts URL (S3 backend)
 
-Aggregated result schema (from `llamator.start_testing`):
+Tool output schema:
 
 ```json
 {
-  "<attack_code_name>": {
-    "<metric_name>": 123
-  }
+  "job_id": "<job_id>",
+  "aggregated": {
+    "<attack_code_name>": {
+      "<metric_name>": 123
+    }
+  },
+  "artifacts_download_url": "https://presigned-url.example/..." 
 }
 ```
+
+`artifacts_download_url` is:
+
+- a presigned URL to `artifacts.zip` for S3 backend (if the archive exists)
+- `null` for local backend or if the archive is not available
 
 Headers commonly used by clients in this repo (integration tests):
 
@@ -274,11 +337,11 @@ Test plan can be defined via presets and/or explicit test lists:
 - `preset_name`: optional preset name supported by LLAMATOR (e.g. `all`, `rus`, `owasp:llm01`)
 - `num_threads`: optional, `>= 1`
 - `basic_tests`: optional list of:
-  - `code_name`: str
-  - `params`: optional list of `{name, value}` (parameter names must be unique per test)
+    - `code_name`: str
+    - `params`: optional list of `{name, value}` (parameter names must be unique per test)
 - `custom_tests`: optional list of:
-  - `import_path`: fully-qualified class (import policy: must start with `llamator.` or `llamator_mcp_server.`)
-  - `params`: optional list of `{name, value}` (names unique per test)
+    - `import_path`: fully-qualified class (import policy: must start with `llamator.` or `llamator_mcp_server.`)
+    - `params`: optional list of `{name, value}` (names unique per test)
 
 ### `run_config` (optional)
 
@@ -319,14 +382,22 @@ By default, each job writes artifacts into:
 If `run_config.artifacts_path` is provided, it must be a **safe relative path** and is resolved inside the job root.
 
 The HTTP API exposes:
-- listing metadata for all files under job root
-- downloading a single file by relative path (safe-joined server-side)
+
+- listing metadata for all files under job root (or job prefix for S3)
+- downloading a single file by relative path (validated server-side)
+
+S3 backend specifics:
+
+- Worker creates an archive `artifacts.zip` and uploads it via presigned PUT.
+- The API resolves downloads via presigned GET and returns 307 redirects.
+- For local filesystem downloads, the API streams files directly.
 
 ## Repository tests
 
 The repository ships **integration tests** that exercise the running server (no unit tests in this repo).
 
 Location:
+
 - `tests/integration/test_http_api.py`
 - `tests/integration/test_mcp_api.py`
 
@@ -351,9 +422,9 @@ What they verify:
 Test configuration:
 
 - `tests/.env.test` defines the integration defaults:
-  - timeouts and polling intervals
-  - MCP protocol version header value
-  - minimal request payload defaults (preset name, num threads, tested model base_url/model/api_key)
+    - timeouts and polling intervals
+    - MCP protocol version header value
+    - minimal request payload defaults (preset name, num threads, tested model base_url/model/api_key)
 
 ## License 📜
 
