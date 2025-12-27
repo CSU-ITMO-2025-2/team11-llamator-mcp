@@ -12,15 +12,19 @@ from fastapi import Request
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
 from llamator_mcp_server.config.settings import Settings
+from llamator_mcp_server.domain.models import ArtifactFileInfo
+from llamator_mcp_server.domain.models import ArtifactsListResponse
+from llamator_mcp_server.domain.models import HealthResponse
 from llamator_mcp_server.domain.models import LlamatorJobInfo
 from llamator_mcp_server.domain.models import LlamatorTestRunRequest
 from llamator_mcp_server.domain.models import LlamatorTestRunResponse
 from llamator_mcp_server.domain.services import TestRunService
 from llamator_mcp_server.domain.services import validate_test_specs
 from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorage
-from llamator_mcp_server.infra.artifacts_storage import LocalArtifactsStorage
+from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorageError
 from llamator_mcp_server.infra.job_store import JobStore
 from redis.asyncio import Redis
+from starlette.responses import Response
 
 from .security import require_api_key
 
@@ -114,8 +118,8 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-    @router.get("/v1/tests/runs/{job_id}/artifacts")
-    async def list_artifacts(job_id: str) -> dict[str, Any]:
+    @router.get("/v1/tests/runs/{job_id}/artifacts", response_model=ArtifactsListResponse)
+    async def list_artifacts(job_id: str) -> ArtifactsListResponse:
         """
         Получить список файлов артефактов по заданию.
 
@@ -128,18 +132,30 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-        if isinstance(artifacts, LocalArtifactsStorage):
-            root: Path = settings.artifacts_root / job_id
-            files: list[dict[str, Any]] = _list_files(root)
-        else:
-            files = await artifacts.list_files(job_id)
-        for f in files:
-            if "full_key" in f:
-                f.pop("full_key", None)
-        return {"job_id": job_id, "files": files}
+        try:
+            files: list[dict[str, Any]] = await artifacts.list_files(job_id)
+        except ArtifactsStorageError as e:
+            logger.error(f"Artifacts list failed job_id={job_id} error={type(e).__name__}: {e}")
+            raise HTTPException(status_code=502, detail="Artifacts backend error")
 
-    @router.get("/v1/tests/runs/{job_id}/artifacts/{path:path}")
-    async def download_artifact(job_id: str, path: str) -> Any:
+        for f in files:
+            f.pop("full_key", None)
+
+        parsed_files: list[ArtifactFileInfo] = [ArtifactFileInfo.model_validate(f) for f in files]
+        return ArtifactsListResponse(job_id=job_id, files=parsed_files)
+
+    @router.get(
+            "/v1/tests/runs/{job_id}/artifacts/{path:path}",
+            response_model=None,
+            responses={
+                200: {"description": "Artifact file content."},
+                307: {"description": "Temporary redirect to presigned URL (S3 backend)."},
+                400: {"description": "Invalid path."},
+                404: {"description": "Job or file not found."},
+                502: {"description": "Artifacts backend error."},
+            },
+    )
+    async def download_artifact(job_id: str, path: str) -> Response:
         """
         Скачать конкретный файл артефакта.
 
@@ -153,39 +169,32 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-        if isinstance(artifacts, LocalArtifactsStorage):
-            root: Path = settings.artifacts_root / job_id
-            try:
-                candidate: Path = _safe_join(root, path)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid path")
-            if not candidate.is_file():
-                raise HTTPException(status_code=404, detail="File not found")
-            return FileResponse(path=str(candidate), filename=candidate.name)
-
         try:
             target = await artifacts.resolve_download(job_id=job_id, rel_path=path)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid path")
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="File not found")
+        except ArtifactsStorageError as e:
+            logger.error(f"Artifacts download resolve failed job_id={job_id} path={path} error={type(e).__name__}: {e}")
+            raise HTTPException(status_code=502, detail="Artifacts backend error")
 
         if target.redirect_url is not None:
             return RedirectResponse(url=target.redirect_url, status_code=307)
 
         if target.local_path is None:
-            raise HTTPException(status_code=404, detail="File not found")
+            raise RuntimeError("Artifacts backend returned an empty download target.")
 
         return FileResponse(path=str(target.local_path), filename=target.local_path.name)
 
-    @router.get("/v1/health")
-    @router.get("/health")
-    async def health() -> dict[str, str]:
+    @router.get("/v1/health", response_model=HealthResponse)
+    @router.get("/health", response_model=HealthResponse)
+    async def health() -> HealthResponse:
         """
         Проверка здоровья сервиса.
 
         :return: Статус сервера.
         """
-        return {"status": "ok"}
+        return HealthResponse(status="ok")
 
     return router

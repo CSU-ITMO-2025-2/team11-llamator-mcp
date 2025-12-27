@@ -48,6 +48,56 @@ def _validate_start_testing_result(val: Any) -> dict[str, dict[str, int]]:
     return parsed  # type: ignore[return-value]
 
 
+async def worker_startup(ctx: dict[str, Any]) -> None:
+    configure_logging(settings.log_level)
+    logger: logging.Logger = logging.getLogger(LOGGER_NAME)
+
+    redis = create_redis_client(settings.redis_dsn)
+    await redis.ping()
+
+    artifacts: ArtifactsStorage = create_artifacts_storage(
+            settings=settings,
+            presign_expires_seconds=15 * 60,
+            list_max_keys=1000,
+    )
+
+    resolved_backend: str = "local"
+    if isinstance(artifacts, S3ArtifactsStorage):
+        resolved_backend = "s3"
+
+    s3_configured: bool = all(
+            [
+                settings.s3_endpoint_url,
+                settings.s3_bucket,
+                settings.s3_access_key_id,
+                settings.s3_secret_access_key,
+            ]
+    )
+    logger.info(
+            f"Artifacts backend initialized configured={settings.artifacts_backend} "
+            f"resolved={resolved_backend} s3_configured={s3_configured}"
+    )
+
+    ctx["settings"] = settings
+    ctx["logger"] = logger
+    ctx["redis_client"] = redis
+    ctx["store"] = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
+    ctx["artifacts_storage"] = artifacts
+
+    logger.info(f"ARQ worker startup completed status=ready")
+
+
+async def worker_shutdown(ctx: dict[str, Any]) -> None:
+    logger = ctx.get("logger")
+
+    redis = ctx.get("redis_client")
+    if redis is not None:
+        await redis.aclose()
+
+    if logger is not None:
+        logger.info(f"ARQ worker shutdown completed status=stopped")
+
+
 async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """
     ARQ задача: выполнить LLAMATOR тестирование.
@@ -105,48 +155,8 @@ async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict
 
 
 class WorkerSettings:
-    on_startup = []
-    on_shutdown = []
+    on_startup = worker_startup
+    on_shutdown = worker_shutdown
     functions = [run_llamator_job]
     redis_settings: RedisSettings = parse_redis_settings(settings.redis_dsn)
     job_timeout: int = settings.run_timeout_seconds
-
-    @staticmethod
-    async def startup(ctx: dict[str, Any]) -> None:
-        configure_logging(settings.log_level)
-        logger: logging.Logger = logging.getLogger(LOGGER_NAME)
-
-        redis = create_redis_client(settings.redis_dsn)
-        artifacts: ArtifactsStorage = create_artifacts_storage(settings=settings, presign_expires_seconds=15 * 60,
-                                                               list_max_keys=1000)
-
-        resolved_backend: str = "local"
-        if isinstance(artifacts, S3ArtifactsStorage):
-            resolved_backend = "s3"
-
-        s3_configured: bool = all(
-                [
-                    settings.s3_endpoint_url,
-                    settings.s3_bucket,
-                    settings.s3_access_key_id,
-                    settings.s3_secret_access_key,
-                ]
-        )
-        logger.info(
-                f"Artifacts backend initialized configured={settings.artifacts_backend} "
-                f"resolved={resolved_backend} s3_configured={s3_configured}"
-        )
-
-        ctx["settings"] = settings
-        ctx["logger"] = logger
-        ctx["redis_client"] = redis
-        ctx["store"] = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
-        ctx["artifacts_storage"] = artifacts
-
-        logger.info("ARQ worker startup completed")
-
-    @staticmethod
-    async def shutdown(ctx: dict[str, Any]) -> None:
-        redis = ctx.get("redis_client")
-        if redis is not None:
-            await redis.aclose()

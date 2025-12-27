@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import urllib.error
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +22,15 @@ _UPLOAD_CHUNK_SIZE_BYTES: int = 1024 * 1024
 _MAX_PARALLEL_UPLOADS: int = 4
 
 
+class ArtifactsStorageError(RuntimeError):
+    """
+    Artifacts storage operation error.
+
+    This exception is raised for backend communication/parsing errors
+    (e.g. S3 request failures or invalid XML responses).
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class ArtifactDownloadTarget:
     """
@@ -29,6 +39,7 @@ class ArtifactDownloadTarget:
     :param local_path: Local file path (when using local backend).
     :param redirect_url: Presigned URL (when using S3 backend).
     """
+
     local_path: Path | None
     redirect_url: str | None
 
@@ -51,6 +62,8 @@ class ArtifactsStorage:
 def _safe_posix_relpath(path: str) -> str:
     normalized: PurePosixPath = PurePosixPath(path)
     if normalized.is_absolute() or ".." in normalized.parts:
+        raise ValueError("Invalid path.")
+    if str(normalized) in ("", "."):
         raise ValueError("Invalid path.")
     return str(normalized)
 
@@ -114,8 +127,14 @@ class S3ArtifactsStorage(ArtifactsStorage):
             raise ValueError("presign_expires_seconds must be >= 1.")
         if list_max_keys < 1:
             raise ValueError("list_max_keys must be >= 1.")
-        if not all([settings.s3_endpoint_url, settings.s3_bucket, settings.s3_access_key_id,
-                    settings.s3_secret_access_key]):
+        if not all(
+                [
+                    settings.s3_endpoint_url,
+                    settings.s3_bucket,
+                    settings.s3_access_key_id,
+                    settings.s3_secret_access_key,
+                ]
+        ):
             raise ValueError("S3 settings are not fully configured.")
 
         self._settings: Settings = settings
@@ -144,8 +163,13 @@ class S3ArtifactsStorage(ArtifactsStorage):
                     max_keys=self._list_max_keys,
                     expires_seconds=self._presign_expires_seconds,
             )
-            xml_bytes: bytes = await asyncio.to_thread(self._http_get_bytes, url)
-            batch, next_token, is_truncated = self._parse_list_objects_v2(xml_bytes, prefix)
+
+            try:
+                xml_bytes: bytes = await asyncio.to_thread(self._http_get_bytes, url)
+                batch, next_token, is_truncated = self._parse_list_objects_v2(xml_bytes, prefix)
+            except (urllib.error.URLError, urllib.error.HTTPError, ET.ParseError, ValueError) as e:
+                raise ArtifactsStorageError(f"S3 list_objects_v2 failed prefix={prefix!r}") from e
+
             all_items.extend(batch)
             if not is_truncated:
                 break
@@ -161,7 +185,12 @@ class S3ArtifactsStorage(ArtifactsStorage):
 
     async def resolve_download(self, job_id: str, rel_path: str) -> ArtifactDownloadTarget:
         key: str = self._object_key(job_id, rel_path)
-        exists: bool = await self._object_exists(key)
+
+        try:
+            exists: bool = await self._object_exists(key)
+        except (urllib.error.URLError, urllib.error.HTTPError, ET.ParseError, ValueError) as e:
+            raise ArtifactsStorageError(f"S3 resolve_download failed key={key!r}") from e
+
         if not exists:
             raise FileNotFoundError("File not found")
 
