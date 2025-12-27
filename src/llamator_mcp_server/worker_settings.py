@@ -50,6 +50,10 @@ def _validate_start_testing_result(val: Any) -> dict[str, dict[str, int]]:
     return parsed  # type: ignore[return-value]
 
 
+def _is_empty_aggregated_result(aggregated: dict[str, dict[str, int]]) -> bool:
+    return not aggregated
+
+
 @dataclass(frozen=True, slots=True)
 class _ExecutionContext:
     """
@@ -226,6 +230,16 @@ class _JobExecutor:
             aggregated_raw: Any = await asyncio.to_thread(runner.run, resolved)
             aggregated: dict[str, dict[str, int]] = _validate_start_testing_result(aggregated_raw)
 
+            if _is_empty_aggregated_result(aggregated):
+                err_type: str = "EmptyAggregatedResultError"
+                err_msg: str = "No tests were executed; aggregated results are empty."
+
+                uploaded = await lifecycle.upload(job_status="failed")
+                await self._store.set_error(job_id, err_type, err_msg)
+                self._logger.error(f"Worker finished job_id={job_id} status=failed error={err_type}: {err_msg}")
+
+                return {"job_id": job_id, "aggregated": {}, "finished_at": _utcnow().isoformat()}
+
             uploaded = await lifecycle.upload(job_status="succeeded")
 
             await self._store.set_result(job_id, aggregated)
@@ -314,3 +328,4 @@ class WorkerSettings:
     functions = [run_llamator_job]
     redis_settings: RedisSettings = parse_redis_settings(settings.redis_dsn)
     job_timeout: int = settings.run_timeout_seconds
+    max_tries: int = 1

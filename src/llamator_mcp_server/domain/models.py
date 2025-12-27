@@ -288,6 +288,7 @@ class LlamatorJobInfo(BaseModel):
     :param request: Запрос (с редактированными секретами).
     :param result: Результат (если есть).
     :param error: Ошибка (если есть).
+    :param error_notice: Notification message about execution error (if any).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -298,6 +299,7 @@ class LlamatorJobInfo(BaseModel):
     request: dict[str, object]
     result: LlamatorJobResult | None = None
     error: LlamatorJobError | None = None
+    error_notice: str | None = None
 
 
 class ArtifactFileInfo(BaseModel):

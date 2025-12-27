@@ -1,6 +1,6 @@
 # ![LLAMATOR](assets/LLAMATOR.svg)
 
-MCP server for llamator: automate LLM red teaming workflows
+MCP server for LLAMATOR: automate LLM red teaming workflows
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC_BY--NC--SA_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![GitHub Repo stars](https://img.shields.io/github/stars/LLAMATOR-Core/llamator-mcp-server)](https://github.com/LLAMATOR-Core/llamator-mcp-server/stargazers)
@@ -16,6 +16,7 @@ MCP server for llamator: automate LLM red teaming workflows
 - [MCP API (Streamable HTTP)](#mcp-api-streamable-http)
 - [Request model](#request-model)
 - [Artifact storage](#artifact-storage)
+- [Metrics](#metrics)
 - [Repository tests](#repository-tests)
 - [License 📜](#license-)
 
@@ -38,14 +39,17 @@ Main usage flow:
 
 Components:
 
-- **API container** (FastAPI + MCP ASGI app):
+- **API container** (FastAPI + mounted MCP ASGI app):
     - Validates input (`validate_test_specs`).
     - Enqueues ARQ job (`run_llamator_job`).
     - Serves HTTP endpoints under `/v1/...`.
+    - Exposes Swagger UI with persisted auth (`swagger_ui_parameters={"persistAuthorization": True}`).
     - Mounts MCP app under `LLAMATOR_MCP_MCP_MOUNT_PATH` (default: `/mcp`).
-    - Protects both HTTP and MCP endpoints with optional API key via header `X-API-Key`.
-    - Converts single-message SSE responses to `application/json` for MCP POST requests when upstream returns
-      `text/event-stream`.
+    - Protects:
+        - HTTP API via FastAPI dependency (`X-API-Key` header).
+        - MCP app via an ASGI wrapper (`X-API-Key` header).
+    - Converts **single-message SSE** responses to `application/json` for MCP POST requests when upstream returns
+      `text/event-stream` (buffered up to 1 MiB; otherwise passthrough).
 - **Worker container** (ARQ):
     - Resolves test plan (presets + explicit test specs).
     - Runs LLAMATOR (`llamator.start_testing`) in a thread.
@@ -69,7 +73,7 @@ Minimal run:
 docker compose up --build
 ```
 
-The compose stack includes:
+The compose stack typically includes:
 
 - `redis` (ports: `6379:6379`)
 - `api` (ports: `${LLAMATOR_MCP_HTTP_PORT:-8000}:${LLAMATOR_MCP_HTTP_PORT:-8000}`)
@@ -118,13 +122,28 @@ Optional:
 
 Behavior:
 
-- Worker zips job artifacts into `artifacts.zip` and uploads it to S3.
-- HTTP/MCP downloads return **307 redirect** to a presigned GET URL (no direct file streaming from the API container).
+- Worker zips job artifacts into `artifacts.zip` and uploads it to S3 via a presigned PUT URL.
+- HTTP downloads for S3 backend return **307 redirect** to a presigned GET URL (no direct file streaming from the API
+  container).
+- MCP tool output may include a presigned `artifacts_download_url` for `artifacts.zip` (if the archive exists).
 
 ### API security
 
 - `LLAMATOR_MCP_API_KEY` (default: empty)  
-  If set, requests must include header `X-API-Key: <value>`.
+  If set, requests must include header `X-API-Key: <value>` for protected routes.
+
+Public routes:
+
+- `GET /v1/health`, `GET /health`
+- `GET /metrics`
+
+Protected routes (require API key when enabled):
+
+- `POST /v1/tests/runs`
+- `GET /v1/tests/runs/{job_id}`
+- `GET /v1/tests/runs/{job_id}/artifacts`
+- `GET /v1/tests/runs/{job_id}/artifacts/{path}`
+- MCP Streamable HTTP endpoint under `LLAMATOR_MCP_MCP_MOUNT_PATH`
 
 ### Attack model (OpenAI-compatible)
 
@@ -183,7 +202,7 @@ With defaults: `http://localhost:8000/mcp/`.
 
 ## HTTP API
 
-All routes are under `/v1`. If `LLAMATOR_MCP_API_KEY` is set, add: `X-API-Key: <key>`.
+All routes below (except health/metrics) are protected by `X-API-Key` if `LLAMATOR_MCP_API_KEY` is set.
 
 ### Health
 
@@ -221,6 +240,7 @@ Contains:
 - timestamps
 - `request`: **redacted** request snapshot (no API keys; only `api_key_present: true|false`)
 - optional `result` or `error`
+- optional `error_notice` (a compact server-generated error string)
 
 Errors:
 
@@ -228,7 +248,7 @@ Errors:
 
 ### List artifacts
 
-- `GET /v1/tests/runs/{job_id}/artifacts`
+- `GET /v1/tests/runs/{job_id}/artifacts` → `ArtifactsListResponse`
 
 Response:
 
@@ -270,18 +290,22 @@ Errors:
 
 ## MCP API (Streamable HTTP)
 
-The MCP server is mounted under `LLAMATOR_MCP_MCP_MOUNT_PATH` and uses **Streamable HTTP** transport.
+The MCP server is mounted under `LLAMATOR_MCP_MCP_MOUNT_PATH` and uses **Streamable HTTP** transport with:
+
+- `stateless_http=True`
+- `streamable_http_path=LLAMATOR_MCP_MCP_STREAMABLE_HTTP_PATH`
+- `json_response=True`
 
 Tools exposed:
 
 - `create_llamator_run`
     - Input: `LlamatorTestRunRequest`
     - Behavior: submit job and **await completion** (within `LLAMATOR_MCP_RUN_TIMEOUT_SECONDS`)
-    - Output: aggregated result dict + artifacts URL (S3 backend)
+    - Output: aggregated result dict + optional artifacts URL (S3 backend)
 - `get_llamator_run`
     - Input: `job_id: str`
     - Behavior: fetch existing job and return aggregated result **only if finished**
-    - Output: aggregated result dict + artifacts URL (S3 backend)
+    - Output: aggregated result dict + optional artifacts URL (S3 backend)
 
 Tool output schema:
 
@@ -293,7 +317,8 @@ Tool output schema:
       "<metric_name>": 123
     }
   },
-  "artifacts_download_url": "https://presigned-url.example/..." 
+  "artifacts_download_url": "https://presigned-url.example/...",
+  "error_notice": "SomeError: some message"
 }
 ```
 
@@ -301,6 +326,11 @@ Tool output schema:
 
 - a presigned URL to `artifacts.zip` for S3 backend (if the archive exists)
 - `null` for local backend or if the archive is not available
+
+`error_notice` is:
+
+- `null` if the job succeeded without errors
+- a compact error string for failed jobs (either stored by worker or built from the job error payload)
 
 Headers commonly used by clients in this repo (integration tests):
 
@@ -313,7 +343,7 @@ Headers commonly used by clients in this repo (integration tests):
 Transport detail:
 
 - Some MCP handlers may respond with `text/event-stream` for POST. The server includes an ASGI wrapper that converts
-  **single-message SSE** responses (`event: message` + `data: <json>`) into `application/json` for POST requests
+  **single-message SSE** responses (`data: <json>`) into `application/json` for POST requests (when possible)
   to support clients that expect raw JSON responses.
 
 ## Request model
@@ -392,9 +422,15 @@ S3 backend specifics:
 - The API resolves downloads via presigned GET and returns 307 redirects.
 - For local filesystem downloads, the API streams files directly.
 
+## Metrics
+
+Prometheus metrics are exposed on:
+
+- `GET /metrics`
+
 ## Repository tests
 
-The repository ships **integration tests** that exercise the running server (no unit tests in this repo).
+The repository ships **integration tests** that exercise the running server.
 
 Location:
 
@@ -412,12 +448,20 @@ What they verify:
 - `GET /v1/tests/runs/{job_id}/artifacts` returns a schema-compatible listing
 - `GET /v1/tests/runs/{job_id}/artifacts/../secrets.txt` is rejected (`400`)
 - duplicate parameter names in test params cause `400` validation error
+- after job completion, attempts to download the first listed artifact:
+    - expects `307` + `Location` for S3 backend
+    - expects `200` + non-empty body for local backend
 
 ### MCP API tests
 
 - MCP `tools/list` contains `create_llamator_run` and `get_llamator_run`
-- `create_llamator_run` returns a non-empty aggregated result dict
-- result can be returned either in `structuredContent` or as JSON in `content[].text`
+- `create_llamator_run` returns a dict with:
+    - `job_id` (32-char hex)
+    - `aggregated` (may be empty if no tests executed)
+    - optional `artifacts_download_url`
+- MCP tool result may be returned in either:
+    - `structuredContent`
+    - or as JSON in `content[].text` (fallback parsing)
 
 Test configuration:
 
@@ -425,6 +469,10 @@ Test configuration:
     - timeouts and polling intervals
     - MCP protocol version header value
     - minimal request payload defaults (preset name, num threads, tested model base_url/model/api_key)
+
+Optional override:
+
+- `LLAMATOR_MCP_TEST_BASE_URL` allows running tests against an already deployed service.
 
 ## License 📜
 

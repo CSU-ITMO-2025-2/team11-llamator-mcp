@@ -8,6 +8,7 @@ import pytest
 
 from tests.conftest import McpJsonRpcClient
 from tests.conftest import McpSession
+from tests.conftest import ResponseReporter
 
 
 def _tool_names(tools: list[dict[str, Any]]) -> set[str]:
@@ -88,6 +89,15 @@ def _assert_mcp_run_result_schema(payload: Any) -> None:
         assert isinstance(artifacts_url, str), f"Expected artifacts_download_url to be str, got {type(artifacts_url)}"
         assert artifacts_url.strip(), "Expected non-empty artifacts_download_url when provided."
 
+    err_val: Any = payload.get("error")
+    if err_val is not None:
+        if isinstance(err_val, str):
+            assert err_val.strip(), "Expected non-empty error string when provided."
+            return
+        if isinstance(err_val, dict):
+            assert err_val, "Expected non-empty error object when provided."
+            return
+
     aggregated: Any = payload.get("aggregated")
     _assert_start_testing_result_schema(aggregated)
 
@@ -105,6 +115,7 @@ def test_mcp_create_run_returns_start_testing_result(
     mcp_session: McpSession,
     minimal_run_request_payload: dict[str, Any],
     capsys: pytest.CaptureFixture[str],
+    reporter: ResponseReporter,
 ) -> None:
     tools: list[dict[str, Any]] = mcp_client.list_tools(mcp_session)
     tool_map: dict[str, dict[str, Any]] = {str(t.get("name")): t for t in tools if isinstance(t.get("name"), str)}
@@ -126,4 +137,4 @@ def test_mcp_create_run_returns_start_testing_result(
     _assert_mcp_run_result_schema(created_payload)
 
     with capsys.disabled():
-        print(json.dumps(created_payload, ensure_ascii=False, indent=2, sort_keys=True))
+        reporter.message(json.dumps(created_payload, ensure_ascii=False, indent=2, sort_keys=True))

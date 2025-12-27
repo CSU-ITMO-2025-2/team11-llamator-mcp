@@ -83,16 +83,23 @@ async def _await_job_completion(
         await asyncio.sleep(sleep_for)
 
 
-def _extract_aggregated_result(job_id: str, info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
+def _build_error_notice(info: LlamatorJobInfo) -> str | None:
+    err = info.error
+    if err is None:
+        return None
+    if err.message:
+        return f"{err.error_type}: {err.message}"
+    return f"{err.error_type}"
+
+
+def _extract_aggregated_or_empty(info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
     if info.status == JobStatus.SUCCEEDED:
         if info.result is None:
             raise RuntimeError("Job succeeded but result is missing.")
         return dict(info.result.aggregated)
 
     if info.status == JobStatus.FAILED:
-        if info.error is None:
-            raise RuntimeError("Job failed but error is missing.")
-        raise RuntimeError(f"Job failed: {job_id}: {info.error.error_type}: {info.error.message}")
+        return {}
 
     raise ValueError(f"Job not finished: {info.status.value}")
 
@@ -151,10 +158,11 @@ def build_mcp(
             - job_id: str
             - aggregated: dict[str, dict[str, int]]
             - artifacts_download_url: str | None
+            - error_notice: str | None
         :raises ValueError: If the request is invalid or the job is not finished.
         :raises TimeoutError: If the job does not complete within the configured timeout.
         :raises KeyError: If the job cannot be found in the store.
-        :raises RuntimeError: If the job failed or returned an inconsistent state.
+        :raises RuntimeError: If the job returned an inconsistent state (e.g. succeeded but result is missing).
         """
         logger.info(f"Received MCP create_llamator_run parameters: {_safe_log_request(req)}")
         validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
@@ -169,13 +177,15 @@ def build_mcp(
             timeout_seconds=settings.run_timeout_seconds,
         )
 
-        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(submitted.job_id, info)
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_or_empty(info)
         artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=submitted.job_id)
+        error_notice: str | None = info.error_notice if info.error_notice is not None else _build_error_notice(info)
 
         return {
             "job_id": submitted.job_id,
             "aggregated": aggregated,
             "artifacts_download_url": artifacts_url,
+            "error_notice": error_notice,
         }
 
     @mcp.tool()
@@ -188,18 +198,21 @@ def build_mcp(
             - job_id: str
             - aggregated: dict[str, dict[str, int]]
             - artifacts_download_url: str | None
+            - error_notice: str | None
         :raises KeyError: If the job cannot be found in the store.
         :raises ValueError: If the job is not finished yet.
-        :raises RuntimeError: If the job failed or returned an inconsistent state.
+        :raises RuntimeError: If the job returned an inconsistent state (e.g. succeeded but result is missing).
         """
         info: LlamatorJobInfo = await store.get(job_id)
-        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(job_id, info)
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_or_empty(info)
         artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=job_id)
+        error_notice: str | None = info.error_notice if info.error_notice is not None else _build_error_notice(info)
 
         return {
             "job_id": job_id,
             "aggregated": aggregated,
             "artifacts_download_url": artifacts_url,
+            "error_notice": error_notice,
         }
 
     return mcp

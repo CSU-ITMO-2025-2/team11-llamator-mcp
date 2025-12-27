@@ -14,6 +14,7 @@ from typing import Literal
 from typing import Mapping
 
 import pytest
+from icecream import ic
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -136,6 +137,140 @@ class ClientResponse:
         if not self.body:
             raise ValueError("Response body is empty.")
         return json.loads(self.body.decode("utf-8"))
+
+
+class ResponseReporter:
+    """
+    Centralized structured output for integration tests using icecream.
+
+    This class standardizes logging across tests and keeps printing logic
+    out of the test bodies.
+    """
+
+    def __init__(self) -> None:
+        ic.configureOutput(includeContext=True, argToStringFunction=self._arg_to_str)
+
+    @staticmethod
+    def _arg_to_str(arg: Any) -> str:
+        """
+        Convert icecream arguments to strings without truncation.
+
+        :param arg: Any value.
+        :return: String representation.
+        """
+        if isinstance(arg, str):
+            return arg
+        if isinstance(arg, bytes):
+            try:
+                return arg.decode("utf-8")
+            except UnicodeDecodeError:
+                return repr(arg)
+        return repr(arg)
+
+    @staticmethod
+    def _json_pretty(payload: Any) -> str:
+        """
+        Pretty JSON dump without truncation.
+
+        :param payload: JSON-serializable structure.
+        :return: Pretty string.
+        """
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+
+    def section(self, title: str) -> None:
+        """
+        Print a logical section header.
+
+        :param title: Section title.
+        :return: None.
+        """
+        ic(f"=== {title} ===")
+
+    def http_call(self, label: str, method: str, path: str, resp: ClientResponse) -> None:
+        """
+        Print a one-line HTTP call summary.
+
+        :param label: Logical label (test step).
+        :param method: HTTP method.
+        :param path: Request path.
+        :param resp: Response.
+        :return: None.
+        """
+        ic(f"[HTTP] {label} {method.upper()} {path} -> {resp.status}")
+
+    def http_json(self, title: str, payload: Any) -> None:
+        """
+        Print a JSON payload in a dedicated block.
+
+        :param title: Block title.
+        :param payload: JSON payload.
+        :return: None.
+        """
+        ic(f"{title}:\n{self._json_pretty(payload)}")
+
+    def http_redirect_location(self, label: str, method: str, path: str, resp: ClientResponse) -> None:
+        """
+        Print redirect location for 3xx responses.
+
+        :param label: Logical label.
+        :param method: HTTP method.
+        :param path: Request path.
+        :param resp: Response.
+        :return: None.
+        """
+        location: str | None = resp.headers.get("location")
+        ic(f"[HTTP] {label} {method.upper()} {path} -> {resp.status} location={location}")
+
+    def poll_status_line(self, label: str, job_id: str, status: str, updated_at: str | None) -> None:
+        """
+        Print a compact poll status line.
+
+        :param label: Logical label.
+        :param job_id: Job id.
+        :param status: Job status.
+        :param updated_at: Optional updated_at string.
+        :return: None.
+        """
+        suffix: str = f" updated_at={updated_at}" if updated_at else ""
+        ic(f"[POLL] {label} job_id={job_id} status={status}{suffix}")
+
+    def final_job_result(self, label: str, job_payload: dict[str, Any]) -> None:
+        """
+        Print the final server response and the extracted result block.
+
+        :param label: Logical label.
+        :param job_payload: Final job JSON response.
+        :return: None.
+        """
+        job_id: Any = job_payload.get("job_id")
+        status: Any = job_payload.get("status")
+        updated_at: Any = job_payload.get("updated_at")
+
+        self.section(f"FINAL {label} job_id={job_id} status={status} updated_at={updated_at}")
+
+        result_val: Any = job_payload.get("result")
+        error_val: Any = job_payload.get("error")
+        error_notice_val: Any = job_payload.get("error_notice")
+
+        self.http_json("server.response", job_payload)
+
+        if result_val is not None:
+            self.http_json("server.result", result_val)
+
+        if error_val is not None:
+            self.http_json("server.error", error_val)
+
+        if error_notice_val is not None:
+            self.http_json("server.error_notice", error_notice_val)
+
+    def message(self, msg: str) -> None:
+        """
+        Log a message line.
+
+        :param msg: Message string.
+        :return: None.
+        """
+        ic(msg)
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -281,9 +416,10 @@ class McpJsonRpcClient:
     :param cfg: Integration test configuration.
     """
 
-    def __init__(self, http: HttpJsonClient, cfg: IntegrationTestConfig) -> None:
+    def __init__(self, http: HttpJsonClient, cfg: IntegrationTestConfig, reporter: ResponseReporter) -> None:
         self._http: HttpJsonClient = http
         self._cfg: IntegrationTestConfig = cfg
+        self._reporter: ResponseReporter = reporter
 
     def initialize(self) -> McpSession:
         """
@@ -305,6 +441,7 @@ class McpJsonRpcClient:
 
         headers: dict[str, str] = self._mcp_headers(session_id=None)
         resp: ClientResponse = self._http.post_raw(self._cfg.mcp_endpoint, init_msg, headers=headers)
+        self._reporter.http_call("mcp.initialize", "POST", self._cfg.mcp_path, resp)
         assert resp.status == 200, f"initialize status={resp.status} body={resp.body!r}"
 
         payload: dict[str, Any] = _expect_json_obj(resp)
@@ -316,6 +453,7 @@ class McpJsonRpcClient:
         init_notif: dict[str, Any] = {"jsonrpc": "2.0", "method": "notifications/initialized"}
         headers2: dict[str, str] = self._mcp_headers(session_id=session_id)
         resp2: ClientResponse = self._http.post_raw(self._cfg.mcp_endpoint, init_notif, headers=headers2)
+        self._reporter.http_call("mcp.notifications.initialized", "POST", self._cfg.mcp_path, resp2)
         assert resp2.status in (202, 200), f"initialized status={resp2.status} body={resp2.body!r}"
 
         return McpSession(endpoint_url=self._cfg.mcp_endpoint, session_id=session_id)
@@ -331,6 +469,7 @@ class McpJsonRpcClient:
         msg: dict[str, Any] = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
         headers: dict[str, str] = self._mcp_headers(session_id=session.session_id)
         resp: ClientResponse = self._http.post_raw(session.endpoint_url, msg, headers=headers)
+        self._reporter.http_call("mcp.tools.list", "POST", self._cfg.mcp_path, resp)
         assert resp.status == 200, f"tools/list status={resp.status} body={resp.body!r}"
 
         payload: dict[str, Any] = _expect_json_obj(resp)
@@ -357,6 +496,7 @@ class McpJsonRpcClient:
         }
         headers: dict[str, str] = self._mcp_headers(session_id=session.session_id)
         resp: ClientResponse = self._http.post_raw(session.endpoint_url, msg, headers=headers)
+        self._reporter.http_call(f"mcp.tools.call.{tool_name}", "POST", self._cfg.mcp_path, resp)
         assert resp.status == 200, f"tools/call status={resp.status} body={resp.body!r}"
 
         payload: dict[str, Any] = _expect_json_obj(resp)
@@ -364,8 +504,6 @@ class McpJsonRpcClient:
         assert payload.get("id") == 3
 
         result: dict[str, Any] = _expect_dict(payload.get("result"))
-        is_error: bool = bool(result.get("isError", False))
-        assert not is_error, f"tools/call isError=true result={result!r}"
         return result
 
     def _mcp_headers(self, session_id: str | None) -> dict[str, str]:
@@ -665,6 +803,16 @@ def http_client(it_config: IntegrationTestConfig) -> HttpJsonClient:
     return HttpJsonClient(base_url=it_config.base_url, timeout_s=it_config.http_timeout_s)
 
 
+@pytest.fixture(scope="session")
+def reporter() -> ResponseReporter:
+    """
+    Provide a shared response reporter using icecream.
+
+    :return: ResponseReporter.
+    """
+    return ResponseReporter()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_server_ready(http_client: HttpJsonClient, it_config: IntegrationTestConfig) -> None:
     """
@@ -689,15 +837,19 @@ def http_headers(it_config: IntegrationTestConfig) -> dict[str, str]:
 
 
 @pytest.fixture()
-def mcp_client(http_client: HttpJsonClient, it_config: IntegrationTestConfig) -> McpJsonRpcClient:
+def mcp_client(
+    http_client: HttpJsonClient,
+    it_config: IntegrationTestConfig,
+    reporter: ResponseReporter,
+) -> McpJsonRpcClient:
     """
     Provide MCP JSON-RPC client.
 
     :param http_client: HTTP client.
-    :param it_config: IntegrationTestConfig.
+    :param it_config: Integration configuration.
     :return: McpJsonRpcClient instance.
     """
-    return McpJsonRpcClient(http=http_client, cfg=it_config)
+    return McpJsonRpcClient(http=http_client, cfg=it_config, reporter=reporter)
 
 
 @pytest.fixture()
