@@ -328,3 +328,4 @@ class WorkerSettings:
     functions = [run_llamator_job]
     redis_settings: RedisSettings = parse_redis_settings(settings.redis_dsn)
     job_timeout: int = settings.run_timeout_seconds
+    max_tries: int = 1
