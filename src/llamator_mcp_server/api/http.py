@@ -18,6 +18,7 @@ from llamator_mcp_server.domain.models import LlamatorTestRunResponse
 from llamator_mcp_server.domain.services import TestRunService
 from llamator_mcp_server.domain.services import validate_test_specs
 from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorage
+from llamator_mcp_server.infra.artifacts_storage import LocalArtifactsStorage
 from llamator_mcp_server.infra.job_store import JobStore
 from redis.asyncio import Redis
 
@@ -127,7 +128,11 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-        files: list[dict[str, Any]] = await artifacts.list_files(job_id)
+        if isinstance(artifacts, LocalArtifactsStorage):
+            root: Path = settings.artifacts_root / job_id
+            files: list[dict[str, Any]] = _list_files(root)
+        else:
+            files = await artifacts.list_files(job_id)
         for f in files:
             if "full_key" in f:
                 f.pop("full_key", None)
@@ -147,6 +152,16 @@ def build_router(
             await store.get(job_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
+
+        if isinstance(artifacts, LocalArtifactsStorage):
+            root: Path = settings.artifacts_root / job_id
+            try:
+                candidate: Path = _safe_join(root, path)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid path")
+            if not candidate.is_file():
+                raise HTTPException(status_code=404, detail="File not found")
+            return FileResponse(path=str(candidate), filename=candidate.name)
 
         try:
             target = await artifacts.resolve_download(job_id=job_id, rel_path=path)

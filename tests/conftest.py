@@ -8,10 +8,16 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal, Mapping
+from typing import Any
+from typing import Final
+from typing import Literal
+from typing import Mapping
 
 import pytest
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import field_validator
 
 DEFAULT_ENV_FILE_NAME: Final[str] = ".env.test"
 ENV_PREFIX: Final[str] = "LLAMATOR_MCP_TEST_"
@@ -129,6 +135,19 @@ class ClientResponse:
         return json.loads(self.body.decode("utf-8"))
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """
+    urllib handler that disables automatic redirect following.
+
+    This is used by integration tests to capture 307 Location header
+    for S3 presigned downloads without downloading the file.
+    """
+
+    def redirect_request(self, req: urllib.request.Request, fp: Any, code: int, msg: str, headers: Any,
+                         newurl: str) -> Any:  # noqa: ANN401
+        return None
+
+
 class HttpJsonClient:
     """
     Minimal JSON-over-HTTP client for integration tests.
@@ -154,7 +173,21 @@ class HttpJsonClient:
         """
         url: str = _join_url(self._base_url, path)
         req: urllib.request.Request = urllib.request.Request(url=url, method="GET", headers=dict(headers))
-        return self._send(req)
+        return self._send(req, follow_redirects=True)
+
+    def get_no_redirect(self, path: str, headers: Mapping[str, str]) -> ClientResponse:
+        """
+        Send GET request without following redirects.
+
+        Useful for endpoints that return 307 redirect to a presigned URL (S3 backend).
+
+        :param path: Path part, e.g. /v1/tests/runs/{job_id}/artifacts/{path}
+        :param headers: Request headers.
+        :return: ClientResponse.
+        """
+        url: str = _join_url(self._base_url, path)
+        req: urllib.request.Request = urllib.request.Request(url=url, method="GET", headers=dict(headers))
+        return self._send(req, follow_redirects=False)
 
     def post_json(self, path: str, payload: Any, headers: Mapping[str, str]) -> ClientResponse:
         """
@@ -170,7 +203,7 @@ class HttpJsonClient:
         req_headers: dict[str, str] = dict(headers)
         req_headers["Content-Type"] = "application/json"
         req: urllib.request.Request = urllib.request.Request(url=url, data=data, method="POST", headers=req_headers)
-        return self._send(req)
+        return self._send(req, follow_redirects=True)
 
     def post_raw(self, url: str, payload_json: dict[str, Any], headers: Mapping[str, str]) -> ClientResponse:
         """
@@ -185,21 +218,31 @@ class HttpJsonClient:
         req_headers: dict[str, str] = dict(headers)
         req_headers["Content-Type"] = "application/json"
         req: urllib.request.Request = urllib.request.Request(url=url, data=data, method="POST", headers=req_headers)
-        return self._send(req)
+        return self._send(req, follow_redirects=True)
 
-    def _send(self, req: urllib.request.Request) -> ClientResponse:
+    def _send(self, req: urllib.request.Request, follow_redirects: bool) -> ClientResponse:
         """
         Execute request and return response.
 
         :param req: Prepared urllib request.
+        :param follow_redirects: Whether to follow 3xx redirects.
         :return: ClientResponse.
         """
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout_s) as resp:
-                status: int = int(resp.status)
-                headers: dict[str, str] = {str(k).lower(): str(v) for k, v in resp.headers.items()}
-                body: bytes = resp.read()
-                return ClientResponse(status=status, headers=headers, body=body)
+            if follow_redirects:
+                with urllib.request.urlopen(req, timeout=self._timeout_s) as resp:
+                    status: int = int(resp.status)
+                    headers: dict[str, str] = {str(k).lower(): str(v) for k, v in resp.headers.items()}
+                    body: bytes = resp.read()
+                    return ClientResponse(status=status, headers=headers, body=body)
+
+            opener = urllib.request.build_opener(_NoRedirectHandler())
+            with opener.open(req, timeout=self._timeout_s) as resp:
+                status2: int = int(resp.status)
+                headers2: dict[str, str] = {str(k).lower(): str(v) for k, v in resp.headers.items()}
+                body2: bytes = resp.read()
+                return ClientResponse(status=status2, headers=headers2, body=body2)
+
         except urllib.error.HTTPError as e:
             status_err: int = int(e.code)
             headers_err: dict[str, str] = {str(k).lower(): str(v) for k, v in e.headers.items()}
@@ -488,13 +531,13 @@ def _load_test_config() -> IntegrationTestConfig:
     mcp_protocol_version: str = _get_env_required(f"{ENV_PREFIX}MCP_PROTOCOL_VERSION")
 
     return IntegrationTestConfig(
-        base_url=base_url,
-        mcp_path=mcp_path,
-        api_key=api_key,
-        http_timeout_s=http_timeout_s,
-        ready_timeout_s=ready_timeout_s,
-        ready_interval_s=ready_interval_s,
-        mcp_protocol_version=mcp_protocol_version,
+            base_url=base_url,
+            mcp_path=mcp_path,
+            api_key=api_key,
+            http_timeout_s=http_timeout_s,
+            ready_timeout_s=ready_timeout_s,
+            ready_interval_s=ready_interval_s,
+            mcp_protocol_version=mcp_protocol_version,
     )
 
 
@@ -510,12 +553,12 @@ def _load_run_request_env_config() -> RunRequestEnvConfig:
     num_threads: int = _get_env_int(f"{ENV_PREFIX}NUM_THREADS", min_value=1, max_value=256)
 
     return RunRequestEnvConfig(
-        tested_kind=tested_kind,  # type: ignore[arg-type]
-        tested_base_url=tested_base_url,
-        tested_model=tested_model,
-        tested_api_key=tested_api_key,
-        preset_name=preset_name,
-        num_threads=num_threads,
+            tested_kind=tested_kind,  # type: ignore[arg-type]
+            tested_base_url=tested_base_url,
+            tested_model=tested_model,
+            tested_api_key=tested_api_key,
+            preset_name=preset_name,
+            num_threads=num_threads,
     )
 
 

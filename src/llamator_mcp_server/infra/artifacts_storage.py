@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -15,6 +16,9 @@ from urllib.request import urlopen
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.infra.s3_presign import S3PresignConfig
 from llamator_mcp_server.infra.s3_presign import S3Presigner
+
+_UPLOAD_CHUNK_SIZE_BYTES: int = 1024 * 1024
+_MAX_PARALLEL_UPLOADS: int = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,10 +63,11 @@ class LocalArtifactsStorage(ArtifactsStorage):
     def __init__(self, root: Path) -> None:
         self._root: Path = root
 
-    async def list_files(self, job_id: str) -> list[dict[str, Any]]:
+    def _list_files_sync(self, job_id: str) -> list[dict[str, Any]]:
         root: Path = (self._root / job_id).resolve(strict=False)
         if not root.exists():
             return []
+
         results: list[dict[str, Any]] = []
         for dirpath, _, filenames in os.walk(root):
             for name in filenames:
@@ -73,8 +78,12 @@ class LocalArtifactsStorage(ArtifactsStorage):
                     continue
                 st = p.stat()
                 results.append({"path": rel, "size_bytes": st.st_size, "mtime": st.st_mtime})
+
         results.sort(key=lambda x: x["path"])
         return results
+
+    async def list_files(self, job_id: str) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_files_sync, job_id)
 
     async def resolve_download(self, job_id: str, rel_path: str) -> ArtifactDownloadTarget:
         rel: str = _safe_posix_relpath(rel_path)
@@ -135,7 +144,7 @@ class S3ArtifactsStorage(ArtifactsStorage):
                     max_keys=self._list_max_keys,
                     expires_seconds=self._presign_expires_seconds,
             )
-            xml_bytes: bytes = self._http_get_bytes(url)
+            xml_bytes: bytes = await asyncio.to_thread(self._http_get_bytes, url)
             batch, next_token, is_truncated = self._parse_list_objects_v2(xml_bytes, prefix)
             all_items.extend(batch)
             if not is_truncated:
@@ -144,13 +153,14 @@ class S3ArtifactsStorage(ArtifactsStorage):
             if not continuation:
                 break
 
+        for item in all_items:
+            item.pop("full_key", None)
+
         all_items.sort(key=lambda x: x.get("path", ""))
         return all_items
 
     async def resolve_download(self, job_id: str, rel_path: str) -> ArtifactDownloadTarget:
-        rel: str = _safe_posix_relpath(rel_path)
-        key: str = self._object_key(job_id, rel)
-
+        key: str = self._object_key(job_id, rel_path)
         exists: bool = await self._object_exists(key)
         if not exists:
             raise FileNotFoundError("File not found")
@@ -162,11 +172,9 @@ class S3ArtifactsStorage(ArtifactsStorage):
         )
         return ArtifactDownloadTarget(local_path=None, redirect_url=url)
 
-    async def upload_job_artifacts(self, job_id: str, local_root: Path) -> None:
-        if not local_root.exists():
-            return
-
-        root: Path = local_root.resolve(strict=False)
+    @staticmethod
+    def _collect_upload_files(root: Path) -> list[tuple[Path, str]]:
+        out: list[tuple[Path, str]] = []
         for dirpath, _, filenames in os.walk(root):
             for name in filenames:
                 p: Path = Path(dirpath) / name
@@ -174,14 +182,37 @@ class S3ArtifactsStorage(ArtifactsStorage):
                     continue
                 rel: str = str(p.relative_to(root))
                 rel_posix: str = str(PurePosixPath(Path(rel).as_posix()))
-                key: str = self._object_key(job_id, rel_posix)
+                out.append((p, rel_posix))
+        return out
 
-                url: str = self._presigner.presign_put_object(
-                        bucket=self._settings.s3_bucket,
-                        key=key,
-                        expires_seconds=self._presign_expires_seconds,
-                )
-                self._http_put_file(url, p)
+    async def upload_job_artifacts(self, job_id: str, local_root: Path) -> None:
+        if not local_root.exists():
+            return
+
+        root: Path = local_root.resolve(strict=False)
+        files: list[tuple[Path, str]] = await asyncio.to_thread(self._collect_upload_files, root)
+        if not files:
+            return
+
+        sem: asyncio.Semaphore = asyncio.Semaphore(_MAX_PARALLEL_UPLOADS)
+
+        async def _upload_one(file_path: Path, rel_posix: str) -> None:
+            key: str = self._object_key(job_id, rel_posix)
+            url: str = self._presigner.presign_put_object(
+                    bucket=self._settings.s3_bucket,
+                    key=key,
+                    expires_seconds=self._presign_expires_seconds,
+            )
+            await sem.acquire()
+            try:
+                try:
+                    await asyncio.to_thread(self._http_put_file, url, file_path)
+                except Exception as e:
+                    raise RuntimeError(f"Upload failed key={key} file={file_path}") from e
+            finally:
+                sem.release()
+
+        await asyncio.gather(*(_upload_one(p, rel) for (p, rel) in files))
 
     def _job_prefix(self, job_id: str) -> str:
         base: str = (self._settings.s3_key_prefix or "").strip().strip("/")
@@ -194,15 +225,14 @@ class S3ArtifactsStorage(ArtifactsStorage):
         return f"{self._job_prefix(job_id)}{rel}"
 
     async def _object_exists(self, key: str) -> bool:
-        prefix: str = key
         url: str = self._presigner.presign_list_objects_v2(
                 bucket=self._settings.s3_bucket,
-                prefix=prefix,
+                prefix=key,
                 continuation_token=None,
                 max_keys=1,
                 expires_seconds=self._presign_expires_seconds,
         )
-        xml_bytes: bytes = self._http_get_bytes(url)
+        xml_bytes: bytes = await asyncio.to_thread(self._http_get_bytes, url)
         batch, _, _ = self._parse_list_objects_v2(xml_bytes, "")
         return any(item.get("full_key") == key for item in batch)
 
@@ -232,7 +262,7 @@ class S3ArtifactsStorage(ArtifactsStorage):
 
             with file_path.open("rb") as f:
                 while True:
-                    chunk = f.read(1024 * 1024)
+                    chunk = f.read(_UPLOAD_CHUNK_SIZE_BYTES)
                     if not chunk:
                         break
                     conn.send(chunk)
@@ -320,7 +350,7 @@ def create_artifacts_storage(
     """
     backend: str = settings.artifacts_backend.strip().lower()
     if backend not in ("local", "s3", "auto"):
-        raise ValueError("LLAMATOR_MCP_ARTIFACTS_BACKEND must be one of: local, s3, auto.")
+        raise ValueError("artifacts_backend must be one of: local, s3, auto.")
 
     s3_configured: bool = _s3_is_configured(settings)
 
@@ -329,14 +359,13 @@ def create_artifacts_storage(
 
     if backend == "s3":
         if not s3_configured:
-            raise ValueError("S3 backend requested but S3 environment variables are not fully configured.")
+            raise ValueError("S3 backend selected but S3 settings are not fully configured.")
         return S3ArtifactsStorage(
                 settings=settings,
                 presign_expires_seconds=presign_expires_seconds,
                 list_max_keys=list_max_keys,
         )
 
-    # Auto mode
     if s3_configured:
         return S3ArtifactsStorage(
                 settings=settings,
