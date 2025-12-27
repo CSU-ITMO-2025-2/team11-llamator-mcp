@@ -87,7 +87,7 @@ class IntegrationTestConfig:
 
     :param base_url: Base URL of the running API server.
     :param mcp_path: Path where MCP ASGI app is mounted.
-    :param api_key: Optional API key for HTTP routes.
+    :param api_key: Optional API key for protected HTTP/MCP routes.
     :param http_timeout_s: Per-request timeout in seconds.
     :param ready_timeout_s: Healthcheck wait timeout.
     :param ready_interval_s: Healthcheck poll interval.
@@ -147,13 +147,13 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """
 
     def redirect_request(
-        self,
-        req: urllib.request.Request,
-        fp: Any,
-        code: int,
-        msg: str,
-        headers: Any,
-        newurl: str,
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
     ) -> Any:  # noqa: ANN401
         return None
 
@@ -383,6 +383,8 @@ class McpJsonRpcClient:
         }
         if session_id is not None:
             headers["Mcp-Session-Id"] = session_id
+        if self._cfg.api_key is not None:
+            headers["X-API-Key"] = self._cfg.api_key
         return headers
 
 
@@ -538,10 +540,16 @@ def _service_api_key() -> str | None:
 def _load_test_config() -> IntegrationTestConfig:
     _load_env_from_tests_file()
 
-    port: int = _service_http_port()
-    base_url: str = _normalize_base_url(f"http://localhost:{port}")
+    base_url_override: str | None = _get_env_optional(f"{ENV_PREFIX}BASE_URL")
+
+    if base_url_override is not None:
+        base_url: str = _normalize_base_url(base_url_override)
+    else:
+        port: int = _service_http_port()
+        base_url = _normalize_base_url(f"http://localhost:{port}")
+
     mcp_path: str = _service_mcp_mount_path()
-    api_key: str | None = _service_api_key()
+    api_key: str | None = _get_env_optional(f"{ENV_PREFIX}API_KEY") or _service_api_key()
 
     http_timeout_s: float = _get_env_float(f"{ENV_PREFIX}HTTP_TIMEOUT_S")
     ready_timeout_s: float = _get_env_float(f"{ENV_PREFIX}READY_TIMEOUT_S")
@@ -550,13 +558,13 @@ def _load_test_config() -> IntegrationTestConfig:
     mcp_protocol_version: str = _get_env_required(f"{ENV_PREFIX}MCP_PROTOCOL_VERSION")
 
     return IntegrationTestConfig(
-        base_url=base_url,
-        mcp_path=mcp_path,
-        api_key=api_key,
-        http_timeout_s=http_timeout_s,
-        ready_timeout_s=ready_timeout_s,
-        ready_interval_s=ready_interval_s,
-        mcp_protocol_version=mcp_protocol_version,
+            base_url=base_url,
+            mcp_path=mcp_path,
+            api_key=api_key,
+            http_timeout_s=http_timeout_s,
+            ready_timeout_s=ready_timeout_s,
+            ready_interval_s=ready_interval_s,
+            mcp_protocol_version=mcp_protocol_version,
     )
 
 
@@ -574,13 +582,13 @@ def _load_run_request_env_config() -> RunRequestEnvConfig:
     enable_reports: bool = _get_env_bool(f"{ENV_PREFIX}ENABLE_REPORTS")
 
     return RunRequestEnvConfig(
-        tested_kind=tested_kind,  # type: ignore[arg-type]
-        tested_base_url=tested_base_url,
-        tested_model=tested_model,
-        tested_api_key=tested_api_key,
-        preset_name=preset_name,
-        num_threads=num_threads,
-        enable_reports=enable_reports,
+            tested_kind=tested_kind,  # type: ignore[arg-type]
+            tested_base_url=tested_base_url,
+            tested_model=tested_model,
+            tested_api_key=tested_api_key,
+            preset_name=preset_name,
+            num_threads=num_threads,
+            enable_reports=enable_reports,
     )
 
 
@@ -674,7 +682,7 @@ def http_headers(it_config: IntegrationTestConfig) -> dict[str, str]:
     """
     Default headers for HTTP API calls.
 
-    :param it_config: Integration configuration.
+    :param it_config: IntegrationTestConfig.
     :return: Headers dict.
     """
     return _http_headers(it_config)
@@ -686,7 +694,7 @@ def mcp_client(http_client: HttpJsonClient, it_config: IntegrationTestConfig) ->
     Provide MCP JSON-RPC client.
 
     :param http_client: HTTP client.
-    :param it_config: Integration configuration.
+    :param it_config: IntegrationTestConfig.
     :return: McpJsonRpcClient instance.
     """
     return McpJsonRpcClient(http=http_client, cfg=it_config)
