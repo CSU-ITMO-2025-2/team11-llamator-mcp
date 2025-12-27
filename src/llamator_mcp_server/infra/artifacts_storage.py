@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 import urllib.error
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
+from typing import Final
 from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
@@ -19,7 +22,7 @@ from llamator_mcp_server.infra.s3_presign import S3PresignConfig
 from llamator_mcp_server.infra.s3_presign import S3Presigner
 
 _UPLOAD_CHUNK_SIZE_BYTES: int = 1024 * 1024
-_MAX_PARALLEL_UPLOADS: int = 4
+ARTIFACTS_ARCHIVE_NAME: Final[str] = "artifacts.zip"
 
 
 class ArtifactsStorageError(RuntimeError):
@@ -66,6 +69,41 @@ def _safe_posix_relpath(path: str) -> str:
     if str(normalized) in ("", "."):
         raise ValueError("Invalid path.")
     return str(normalized)
+
+
+def _collect_files_for_zip(root: Path) -> list[tuple[Path, str]]:
+    """
+    Collect files under root for ZIP packaging.
+
+    :param root: Root directory to walk.
+    :return: Sorted list of (absolute_path, archive_relative_posix_path).
+    """
+    out: list[tuple[Path, str]] = []
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            p: Path = Path(dirpath) / name
+            if not p.is_file():
+                continue
+            rel: str = str(p.relative_to(root))
+            rel_posix: str = str(PurePosixPath(Path(rel).as_posix()))
+            out.append((p, rel_posix))
+    out.sort(key=lambda x: x[1])
+    return out
+
+
+def _build_zip_archive(root: Path, out_file: Path) -> None:
+    """
+    Build a ZIP archive from all files under root.
+
+    :param root: Root directory to archive.
+    :param out_file: Output ZIP file path.
+    :return: None.
+    """
+    files: list[tuple[Path, str]] = _collect_files_for_zip(root)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out_file, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for file_path, arc_name in files:
+            zf.write(file_path, arcname=arc_name)
 
 
 class LocalArtifactsStorage(ArtifactsStorage):
@@ -201,47 +239,35 @@ class S3ArtifactsStorage(ArtifactsStorage):
         )
         return ArtifactDownloadTarget(local_path=None, redirect_url=url)
 
-    @staticmethod
-    def _collect_upload_files(root: Path) -> list[tuple[Path, str]]:
-        out: list[tuple[Path, str]] = []
-        for dirpath, _, filenames in os.walk(root):
-            for name in filenames:
-                p: Path = Path(dirpath) / name
-                if not p.is_file():
-                    continue
-                rel: str = str(p.relative_to(root))
-                rel_posix: str = str(PurePosixPath(Path(rel).as_posix()))
-                out.append((p, rel_posix))
-        return out
-
     async def upload_job_artifacts(self, job_id: str, local_root: Path) -> None:
         if not local_root.exists():
             return
 
         root: Path = local_root.resolve(strict=False)
-        files: list[tuple[Path, str]] = await asyncio.to_thread(self._collect_upload_files, root)
-        if not files:
-            return
 
-        sem: asyncio.Semaphore = asyncio.Semaphore(_MAX_PARALLEL_UPLOADS)
+        tmp_path: Path | None = None
+        try:
+            fd, tmp_name = tempfile.mkstemp(prefix="llamator-artifacts-", suffix=".zip")
+            os.close(fd)
+            tmp_path = Path(tmp_name)
 
-        async def _upload_one(file_path: Path, rel_posix: str) -> None:
-            key: str = self._object_key(job_id, rel_posix)
+            await asyncio.to_thread(_build_zip_archive, root, tmp_path)
+
+            key: str = self._object_key(job_id, ARTIFACTS_ARCHIVE_NAME)
             url: str = self._presigner.presign_put_object(
                     bucket=self._settings.s3_bucket,
                     key=key,
                     expires_seconds=self._presign_expires_seconds,
             )
-            await sem.acquire()
-            try:
+            await asyncio.to_thread(self._http_put_file, url, tmp_path)
+        except Exception as e:
+            raise ArtifactsStorageError(f"S3 upload_job_artifacts failed job_id={job_id!r}") from e
+        finally:
+            if tmp_path is not None:
                 try:
-                    await asyncio.to_thread(self._http_put_file, url, file_path)
-                except Exception as e:
-                    raise RuntimeError(f"Upload failed key={key} file={file_path}") from e
-            finally:
-                sem.release()
-
-        await asyncio.gather(*(_upload_one(p, rel) for (p, rel) in files))
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _job_prefix(self, job_id: str) -> str:
         base: str = (self._settings.s3_key_prefix or "").strip().strip("/")

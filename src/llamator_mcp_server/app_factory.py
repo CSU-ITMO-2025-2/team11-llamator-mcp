@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
             router = build_router(settings=settings, redis=redis, arq=arq_pool, logger=logger, artifacts=artifacts)
             app.include_router(router)
 
-            mcp = build_mcp(settings=settings, redis=redis, arq=arq_pool, logger=logger)
+            mcp = build_mcp(settings=settings, redis=redis, arq=arq_pool, logger=logger, artifacts=artifacts)
             raw_mcp_app = mcp.streamable_http_app()
             await stack.enter_async_context(mcp.session_manager.run())
 

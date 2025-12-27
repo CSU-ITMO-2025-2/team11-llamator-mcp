@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Final
+from typing import Any
+from typing import Final
 
 from arq.connections import ArqRedis
+from llamator_mcp_server.config.settings import Settings
+from llamator_mcp_server.domain.models import JobStatus
+from llamator_mcp_server.domain.models import LlamatorJobInfo
+from llamator_mcp_server.domain.models import LlamatorTestRunRequest
+from llamator_mcp_server.domain.services import TestRunService
+from llamator_mcp_server.domain.services import validate_test_specs
+from llamator_mcp_server.infra.artifacts_storage import ARTIFACTS_ARCHIVE_NAME
+from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorage
+from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorageError
+from llamator_mcp_server.infra.job_store import JobStore
 from mcp.server.fastmcp import FastMCP
 from redis.asyncio import Redis
-
-from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.domain.models import JobStatus, LlamatorJobInfo, LlamatorTestRunRequest
-from llamator_mcp_server.domain.services import TestRunService, validate_test_specs
-from llamator_mcp_server.infra.job_store import JobStore
 
 
 def _is_terminal_status(status: JobStatus) -> bool:
@@ -46,9 +52,9 @@ def _safe_log_request(req: LlamatorTestRunRequest) -> dict[str, Any]:
 
 
 async def _await_job_completion(
-    store: JobStore,
-    job_id: str,
-    timeout_seconds: int,
+        store: JobStore,
+        job_id: str,
+        timeout_seconds: int,
 ) -> LlamatorJobInfo:
     """
     Дождаться завершения задания (SUCCEEDED/FAILED), опрашивая JobStore.
@@ -77,7 +83,7 @@ async def _await_job_completion(
         await asyncio.sleep(sleep_for)
 
 
-def _extract_aggregated_result(info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
+def _extract_aggregated_result(job_id: str, info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
     if info.status == JobStatus.SUCCEEDED:
         if info.result is None:
             raise RuntimeError("Job succeeded but result is missing.")
@@ -86,16 +92,35 @@ def _extract_aggregated_result(info: LlamatorJobInfo) -> dict[str, dict[str, int
     if info.status == JobStatus.FAILED:
         if info.error is None:
             raise RuntimeError("Job failed but error is missing.")
-        raise RuntimeError(f"Job failed: {info.error.error_type}: {info.error.message}")
+        raise RuntimeError(f"Job failed: {job_id}: {info.error.error_type}: {info.error.message}")
 
     raise ValueError(f"Job not finished: {info.status.value}")
 
 
+async def _try_get_artifacts_download_url(artifacts: ArtifactsStorage, job_id: str) -> str | None:
+    """
+    Resolve artifacts archive download URL for S3 backend.
+
+    :param artifacts: Artifacts storage backend.
+    :param job_id: Job identifier.
+    :return: Presigned URL if available; otherwise None.
+    """
+    try:
+        target = await artifacts.resolve_download(job_id=job_id, rel_path=ARTIFACTS_ARCHIVE_NAME)
+    except (FileNotFoundError, ValueError):
+        return None
+    except ArtifactsStorageError:
+        return None
+
+    return target.redirect_url
+
+
 def build_mcp(
-    settings: Settings,
-    redis: Redis,
-    arq: ArqRedis,
-    logger: logging.Logger,
+        settings: Settings,
+        redis: Redis,
+        arq: ArqRedis,
+        logger: logging.Logger,
+        artifacts: ArtifactsStorage,
 ) -> FastMCP:
     """
     Построить MCP сервер с инструментами для запуска и мониторинга LLAMATOR.
@@ -107,17 +132,17 @@ def build_mcp(
     :return: Экземпляр FastMCP.
     """
     mcp: FastMCP = FastMCP(
-        name="llamator-mcp-server",
-        stateless_http=True,
-        streamable_http_path=settings.mcp_streamable_http_path,
-        json_response=True,
+            name="llamator-mcp-server",
+            stateless_http=True,
+            streamable_http_path=settings.mcp_streamable_http_path,
+            json_response=True,
     )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
     service: TestRunService = TestRunService(arq=arq, store=store, settings=settings, logger=logger)
 
     @mcp.tool()
-    async def create_llamator_run(req: LlamatorTestRunRequest) -> dict[str, dict[str, int]]:
+    async def create_llamator_run(req: LlamatorTestRunRequest) -> dict[str, Any]:
         """
         Create a LLAMATOR job and return the aggregated result after completion.
 
@@ -136,14 +161,22 @@ def build_mcp(
 
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
         info: LlamatorJobInfo = await _await_job_completion(
-            store=store,
-            job_id=submitted.job_id,
-            timeout_seconds=settings.run_timeout_seconds,
+                store=store,
+                job_id=submitted.job_id,
+                timeout_seconds=settings.run_timeout_seconds,
         )
-        return _extract_aggregated_result(info)
+
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(submitted.job_id, info)
+        artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=submitted.job_id)
+
+        return {
+            "job_id": submitted.job_id,
+            "aggregated": aggregated,
+            "artifacts_download_url": artifacts_url,
+        }
 
     @mcp.tool()
-    async def get_llamator_run(job_id: str) -> dict[str, dict[str, int]]:
+    async def get_llamator_run(job_id: str) -> dict[str, Any]:
         """
         Return aggregated LLAMATOR results for a finished job.
 
@@ -154,6 +187,13 @@ def build_mcp(
         :raises RuntimeError: If the job failed or returned an inconsistent state.
         """
         info: LlamatorJobInfo = await store.get(job_id)
-        return _extract_aggregated_result(info)
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(job_id, info)
+        artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=job_id)
+
+        return {
+            "job_id": job_id,
+            "aggregated": aggregated,
+            "artifacts_download_url": artifacts_url,
+        }
 
     return mcp
