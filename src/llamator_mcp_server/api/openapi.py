@@ -26,22 +26,22 @@ def build_openapi_schema(app: FastAPI, scheme_name: str, api_key_header_name: st
         return app.openapi_schema
 
     schema: dict[str, Any] = get_openapi(
-            title=str(app.title),
-            version=str(app.version),
-            routes=app.routes,
-            description=app.description,
+        title=str(app.title),
+        version=str(app.version),
+        routes=app.routes,
+        description=app.description,
     )
 
     components: dict[str, Any] = schema.setdefault("components", {})
     security_schemes: dict[str, Any] = components.setdefault("securitySchemes", {})
 
     security_schemes.setdefault(
-            scheme_name,
-            {
-                "type": "apiKey",
-                "in": "header",
-                "name": api_key_header_name,
-            },
+        scheme_name,
+        {
+            "type": "apiKey",
+            "in": "header",
+            "name": api_key_header_name,
+        },
     )
 
     app.openapi_schema = schema

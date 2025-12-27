@@ -101,10 +101,10 @@ def test_mcp_tools_list_contains_llamator_tools(mcp_client: McpJsonRpcClient, mc
 
 
 def test_mcp_create_run_returns_start_testing_result(
-        mcp_client: McpJsonRpcClient,
-        mcp_session: McpSession,
-        minimal_run_request_payload: dict[str, Any],
-        capsys: pytest.CaptureFixture[str],
+    mcp_client: McpJsonRpcClient,
+    mcp_session: McpSession,
+    minimal_run_request_payload: dict[str, Any],
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     tools: list[dict[str, Any]] = mcp_client.list_tools(mcp_session)
     tool_map: dict[str, dict[str, Any]] = {str(t.get("name")): t for t in tools if isinstance(t.get("name"), str)}
@@ -118,7 +118,7 @@ def test_mcp_create_run_returns_start_testing_result(
     created_fallback: dict[str, Any] | None = _extract_text_json_from_content(created_result)
 
     assert (
-            created_struct is not None or created_fallback is not None
+        created_struct is not None or created_fallback is not None
     ), f"Tool result does not contain structuredContent or JSON text content: {created_result!r}"
 
     created_payload: dict[str, Any] = created_struct or created_fallback or {}

@@ -62,9 +62,9 @@ def _list_files(root: Path) -> list[dict[str, Any]]:
 
 
 _API_KEY_SCHEME: APIKeyHeader = APIKeyHeader(
-        name="X-API-Key",
-        auto_error=False,
-        scheme_name="McpApiKey",
+    name="X-API-Key",
+    auto_error=False,
+    scheme_name="McpApiKey",
 )
 
 
@@ -86,11 +86,11 @@ class _ApiKeyDependency:
 
 
 def build_router(
-        settings: Settings,
-        redis: Redis,
-        arq: Any,
-        logger: logging.Logger,
-        artifacts: ArtifactsStorage,
+    settings: Settings,
+    redis: Redis,
+    arq: Any,
+    logger: logging.Logger,
+    artifacts: ArtifactsStorage,
 ) -> APIRouter:
     """
     Построить HTTP роутер API.
@@ -178,15 +178,15 @@ def build_router(
         return ArtifactsListResponse(job_id=job_id, files=parsed_files)
 
     @protected_router.get(
-            "/v1/tests/runs/{job_id}/artifacts/{path:path}",
-            response_model=None,
-            responses={
-                200: {"description": "Artifact file content."},
-                307: {"description": "Temporary redirect to presigned URL (S3 backend)."},
-                400: {"description": "Invalid path."},
-                404: {"description": "Job or file not found."},
-                502: {"description": "Artifacts backend error."},
-            },
+        "/v1/tests/runs/{job_id}/artifacts/{path:path}",
+        response_model=None,
+        responses={
+            200: {"description": "Artifact file content."},
+            307: {"description": "Temporary redirect to presigned URL (S3 backend)."},
+            400: {"description": "Invalid path."},
+            404: {"description": "Job or file not found."},
+            502: {"description": "Artifacts backend error."},
+        },
     )
     async def download_artifact(job_id: str, path: str) -> Response:
         """
