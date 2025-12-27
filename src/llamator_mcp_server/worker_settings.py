@@ -14,6 +14,7 @@ from llamator_mcp_server.domain.models import JobStatus
 from llamator_mcp_server.domain.models import OpenAIClientConfig
 from llamator_mcp_server.domain.models import TestPlan
 from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorage
+from llamator_mcp_server.infra.artifacts_storage import S3ArtifactsStorage
 from llamator_mcp_server.infra.artifacts_storage import create_artifacts_storage
 from llamator_mcp_server.infra.job_store import JobStore
 from llamator_mcp_server.infra.llamator_runner import LlamatorRunner
@@ -121,7 +122,19 @@ async def startup(ctx: dict[str, Any]) -> None:
             presign_expires_seconds=15 * 60,
             list_max_keys=1000,
     )
-    logger.info(f"Artifacts backend initialized backend={settings.artifacts_backend}")
+    resolved_backend: str = "s3" if isinstance(artifacts, S3ArtifactsStorage) else "local"
+    s3_configured: bool = all(
+            [
+                settings.s3_endpoint_url,
+                settings.s3_bucket,
+                settings.s3_access_key_id,
+                settings.s3_secret_access_key,
+            ]
+    )
+    logger.info(
+            f"Artifacts backend initialized configured={settings.artifacts_backend} "
+            f"resolved={resolved_backend} s3_configured={s3_configured}"
+    )
 
     ctx["settings"] = settings
     ctx["logger"] = logger
