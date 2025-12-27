@@ -48,6 +48,7 @@ class RunRequestEnvConfig(BaseModel):
     :param tested_api_key: Optional api key.
     :param preset_name: Test preset name.
     :param num_threads: Number of threads.
+    :param enable_reports: Enable LLAMATOR reports generation (docx/xlsx/csv).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -59,6 +60,8 @@ class RunRequestEnvConfig(BaseModel):
 
     preset_name: str = Field(min_length=1, max_length=200)
     num_threads: int = Field(ge=1, le=256)
+
+    enable_reports: bool
 
     @field_validator("tested_base_url", "tested_model", "preset_name")
     @classmethod
@@ -143,8 +146,15 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     for S3 presigned downloads without downloading the file.
     """
 
-    def redirect_request(self, req: urllib.request.Request, fp: Any, code: int, msg: str, headers: Any,
-                         newurl: str) -> Any:  # noqa: ANN401
+    def redirect_request(
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
+    ) -> Any:  # noqa: ANN401
         return None
 
 
@@ -483,6 +493,15 @@ def _get_env_int(key: str, *, min_value: int, max_value: int) -> int:
     return val
 
 
+def _get_env_bool(key: str) -> bool:
+    raw: str = _get_env_required(key).strip().lower()
+    if raw in ("1", "true", "yes", "y", "on"):
+        return True
+    if raw in ("0", "false", "no", "n", "off"):
+        return False
+    raise ValueError(f"Invalid bool for {key}: {raw}")
+
+
 def _load_env_from_tests_file() -> None:
     tests_root: Path = Path(__file__).resolve().parent
     env_file: Path = tests_root / DEFAULT_ENV_FILE_NAME
@@ -552,6 +571,8 @@ def _load_run_request_env_config() -> RunRequestEnvConfig:
     preset_name: str = _get_env_required(f"{ENV_PREFIX}PRESET_NAME")
     num_threads: int = _get_env_int(f"{ENV_PREFIX}NUM_THREADS", min_value=1, max_value=256)
 
+    enable_reports: bool = _get_env_bool(f"{ENV_PREFIX}ENABLE_REPORTS")
+
     return RunRequestEnvConfig(
             tested_kind=tested_kind,  # type: ignore[arg-type]
             tested_base_url=tested_base_url,
@@ -559,6 +580,7 @@ def _load_run_request_env_config() -> RunRequestEnvConfig:
             tested_api_key=tested_api_key,
             preset_name=preset_name,
             num_threads=num_threads,
+            enable_reports=enable_reports,
     )
 
 
@@ -699,6 +721,9 @@ def minimal_run_request_payload(run_request_env_config: RunRequestEnvConfig) -> 
 
     return {
         "tested_model": tested_model,
+        "run_config": {
+            "enable_reports": run_request_env_config.enable_reports,
+        },
         "plan": {
             "preset_name": run_request_env_config.preset_name,
             "num_threads": run_request_env_config.num_threads,
