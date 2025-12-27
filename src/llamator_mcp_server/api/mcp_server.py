@@ -52,9 +52,9 @@ def _safe_log_request(req: LlamatorTestRunRequest) -> dict[str, Any]:
 
 
 async def _await_job_completion(
-    store: JobStore,
-    job_id: str,
-    timeout_seconds: int,
+        store: JobStore,
+        job_id: str,
+        timeout_seconds: int,
 ) -> LlamatorJobInfo:
     """
     Дождаться завершения задания (SUCCEEDED/FAILED), опрашивая JobStore.
@@ -83,16 +83,23 @@ async def _await_job_completion(
         await asyncio.sleep(sleep_for)
 
 
-def _extract_aggregated_result(job_id: str, info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
+def _build_error_notice(info: LlamatorJobInfo) -> str | None:
+    err = info.error
+    if err is None:
+        return None
+    if err.message:
+        return f"{err.error_type}: {err.message}"
+    return f"{err.error_type}"
+
+
+def _extract_aggregated_or_empty(info: LlamatorJobInfo) -> dict[str, dict[str, int]]:
     if info.status == JobStatus.SUCCEEDED:
         if info.result is None:
             raise RuntimeError("Job succeeded but result is missing.")
         return dict(info.result.aggregated)
 
     if info.status == JobStatus.FAILED:
-        if info.error is None:
-            raise RuntimeError("Job failed but error is missing.")
-        raise RuntimeError(f"Job failed: {job_id}: {info.error.error_type}: {info.error.message}")
+        return {}
 
     raise ValueError(f"Job not finished: {info.status.value}")
 
@@ -116,11 +123,11 @@ async def _try_get_artifacts_download_url(artifacts: ArtifactsStorage, job_id: s
 
 
 def build_mcp(
-    settings: Settings,
-    redis: Redis,
-    arq: ArqRedis,
-    logger: logging.Logger,
-    artifacts: ArtifactsStorage,
+        settings: Settings,
+        redis: Redis,
+        arq: ArqRedis,
+        logger: logging.Logger,
+        artifacts: ArtifactsStorage,
 ) -> FastMCP:
     """
     Построить MCP сервер с инструментами для запуска и мониторинга LLAMATOR.
@@ -132,10 +139,10 @@ def build_mcp(
     :return: Экземпляр FastMCP.
     """
     mcp: FastMCP = FastMCP(
-        name="llamator-mcp-server",
-        stateless_http=True,
-        streamable_http_path=settings.mcp_streamable_http_path,
-        json_response=True,
+            name="llamator-mcp-server",
+            stateless_http=True,
+            streamable_http_path=settings.mcp_streamable_http_path,
+            json_response=True,
     )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
@@ -151,10 +158,11 @@ def build_mcp(
             - job_id: str
             - aggregated: dict[str, dict[str, int]]
             - artifacts_download_url: str | None
+            - error_notice: str | None
         :raises ValueError: If the request is invalid or the job is not finished.
         :raises TimeoutError: If the job does not complete within the configured timeout.
         :raises KeyError: If the job cannot be found in the store.
-        :raises RuntimeError: If the job failed or returned an inconsistent state.
+        :raises RuntimeError: If the job returned an inconsistent state (e.g. succeeded but result is missing).
         """
         logger.info(f"Received MCP create_llamator_run parameters: {_safe_log_request(req)}")
         validate_test_specs(req.plan.basic_tests, req.plan.custom_tests)
@@ -164,18 +172,20 @@ def build_mcp(
 
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
         info: LlamatorJobInfo = await _await_job_completion(
-            store=store,
-            job_id=submitted.job_id,
-            timeout_seconds=settings.run_timeout_seconds,
+                store=store,
+                job_id=submitted.job_id,
+                timeout_seconds=settings.run_timeout_seconds,
         )
 
-        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(submitted.job_id, info)
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_or_empty(info)
         artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=submitted.job_id)
+        error_notice: str | None = info.error_notice if info.error_notice is not None else _build_error_notice(info)
 
         return {
             "job_id": submitted.job_id,
             "aggregated": aggregated,
             "artifacts_download_url": artifacts_url,
+            "error_notice": error_notice,
         }
 
     @mcp.tool()
@@ -188,18 +198,21 @@ def build_mcp(
             - job_id: str
             - aggregated: dict[str, dict[str, int]]
             - artifacts_download_url: str | None
+            - error_notice: str | None
         :raises KeyError: If the job cannot be found in the store.
         :raises ValueError: If the job is not finished yet.
-        :raises RuntimeError: If the job failed or returned an inconsistent state.
+        :raises RuntimeError: If the job returned an inconsistent state (e.g. succeeded but result is missing).
         """
         info: LlamatorJobInfo = await store.get(job_id)
-        aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(job_id, info)
+        aggregated: dict[str, dict[str, int]] = _extract_aggregated_or_empty(info)
         artifacts_url: str | None = await _try_get_artifacts_download_url(artifacts=artifacts, job_id=job_id)
+        error_notice: str | None = info.error_notice if info.error_notice is not None else _build_error_notice(info)
 
         return {
             "job_id": job_id,
             "aggregated": aggregated,
             "artifacts_download_url": artifacts_url,
+            "error_notice": error_notice,
         }
 
     return mcp

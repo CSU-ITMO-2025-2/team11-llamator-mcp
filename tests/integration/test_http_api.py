@@ -238,7 +238,6 @@ def test_download_any_artifact_after_job_completion(
         with capsys.disabled():
             reporter.section(f"JOB FAILED job_id={final_info.job_id}")
             reporter.message(f"job_failed_error={final_info.error}")
-        return
 
     list_path: str = f"/v1/tests/runs/{created.job_id}/artifacts"
     resp_list: ClientResponse = http_client.get(list_path, headers=http_headers)
