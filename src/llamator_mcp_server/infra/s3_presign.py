@@ -1,4 +1,3 @@
-# team11-llamator-mcp/src/llamator_mcp_server/infra/s3_presign.py
 from __future__ import annotations
 
 import hashlib

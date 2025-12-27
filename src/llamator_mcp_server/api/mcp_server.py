@@ -147,7 +147,10 @@ def build_mcp(
         Create a LLAMATOR job and return the aggregated result after completion.
 
         :param req: Run request.
-        :return: Aggregated LLAMATOR results for a succeeded job.
+        :return: A dict with keys:
+            - job_id: str
+            - aggregated: dict[str, dict[str, int]]
+            - artifacts_download_url: str | None
         :raises ValueError: If the request is invalid or the job is not finished.
         :raises TimeoutError: If the job does not complete within the configured timeout.
         :raises KeyError: If the job cannot be found in the store.
@@ -181,7 +184,10 @@ def build_mcp(
         Return aggregated LLAMATOR results for a finished job.
 
         :param job_id: Job identifier.
-        :return: Aggregated LLAMATOR results for a succeeded job.
+        :return: A dict with keys:
+            - job_id: str
+            - aggregated: dict[str, dict[str, int]]
+            - artifacts_download_url: str | None
         :raises KeyError: If the job cannot be found in the store.
         :raises ValueError: If the job is not finished yet.
         :raises RuntimeError: If the job failed or returned an inconsistent state.

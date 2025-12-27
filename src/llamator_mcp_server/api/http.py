@@ -125,7 +125,7 @@ def build_router(
 
         :param job_id: Идентификатор задания.
         :return: Список файлов (путь, размер, mtime).
-        :raises HTTPException: Если задание не найдено.
+        :raises HTTPException: Если задание не найдено или backend артефактов недоступен.
         """
         try:
             await store.get(job_id)
@@ -161,8 +161,9 @@ def build_router(
 
         :param job_id: Идентификатор задания.
         :param path: Относительный путь файла внутри артефактов задания.
-        :return: Ответ с файлом (FileResponse).
-        :raises HTTPException: Если файл не найден или путь небезопасен.
+        :return: RedirectResponse (307) при S3 backend или FileResponse (200) при локальном backend.
+        :raises HTTPException: Если задание/файл не найден, путь небезопасен или backend артефактов недоступен.
+        :raises RuntimeError: Если backend вернул некорректную цель загрузки.
         """
         try:
             await store.get(job_id)

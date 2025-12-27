@@ -29,11 +29,15 @@ def _parse_system_prompts_value(v: Any) -> tuple[str, ...] | None:
         return None
 
     if isinstance(v, tuple):
-        parts: list[str] = [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        if any(not isinstance(p, str) for p in v):
+            raise ValueError("System prompts value must be a string, a list/tuple of strings, or null.")
+        parts: list[str] = [p.strip() for p in v if p.strip()]
         return tuple(parts) or None
 
     if isinstance(v, list):
-        parts2: list[str] = [p.strip() for p in v if isinstance(p, str) and p.strip()]
+        if any(not isinstance(p, str) for p in v):
+            raise ValueError("System prompts value must be a string, a list/tuple of strings, or null.")
+        parts2: list[str] = [p.strip() for p in v if p.strip()]
         return tuple(parts2) or None
 
     if isinstance(v, str):
