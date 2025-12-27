@@ -156,22 +156,22 @@ class S3ArtifactsStorage(ArtifactsStorage):
     """
 
     def __init__(
-            self,
-            settings: Settings,
-            presign_expires_seconds: int,
-            list_max_keys: int,
+        self,
+        settings: Settings,
+        presign_expires_seconds: int,
+        list_max_keys: int,
     ) -> None:
         if presign_expires_seconds < 1:
             raise ValueError("presign_expires_seconds must be >= 1.")
         if list_max_keys < 1:
             raise ValueError("list_max_keys must be >= 1.")
         if not all(
-                [
-                    settings.s3_endpoint_url,
-                    settings.s3_bucket,
-                    settings.s3_access_key_id,
-                    settings.s3_secret_access_key,
-                ]
+            [
+                settings.s3_endpoint_url,
+                settings.s3_bucket,
+                settings.s3_access_key_id,
+                settings.s3_secret_access_key,
+            ]
         ):
             raise ValueError("S3 settings are not fully configured.")
 
@@ -180,12 +180,12 @@ class S3ArtifactsStorage(ArtifactsStorage):
         self._list_max_keys: int = list_max_keys
 
         self._presigner: S3Presigner = S3Presigner(
-                S3PresignConfig(
-                        endpoint_url=settings.s3_endpoint_url,
-                        access_key_id=settings.s3_access_key_id,
-                        secret_access_key=settings.s3_secret_access_key,
-                        region=settings.s3_region or "us-east-1",
-                )
+            S3PresignConfig(
+                endpoint_url=settings.s3_endpoint_url,
+                access_key_id=settings.s3_access_key_id,
+                secret_access_key=settings.s3_secret_access_key,
+                region=settings.s3_region or "us-east-1",
+            )
         )
 
     async def list_files(self, job_id: str) -> list[dict[str, Any]]:
@@ -195,11 +195,11 @@ class S3ArtifactsStorage(ArtifactsStorage):
         continuation: str | None = None
         while True:
             url: str = self._presigner.presign_list_objects_v2(
-                    bucket=self._settings.s3_bucket,
-                    prefix=prefix,
-                    continuation_token=continuation,
-                    max_keys=self._list_max_keys,
-                    expires_seconds=self._presign_expires_seconds,
+                bucket=self._settings.s3_bucket,
+                prefix=prefix,
+                continuation_token=continuation,
+                max_keys=self._list_max_keys,
+                expires_seconds=self._presign_expires_seconds,
             )
 
             try:
@@ -233,9 +233,9 @@ class S3ArtifactsStorage(ArtifactsStorage):
             raise FileNotFoundError("File not found")
 
         url: str = self._presigner.presign_get_object(
-                bucket=self._settings.s3_bucket,
-                key=key,
-                expires_seconds=self._presign_expires_seconds,
+            bucket=self._settings.s3_bucket,
+            key=key,
+            expires_seconds=self._presign_expires_seconds,
         )
         return ArtifactDownloadTarget(local_path=None, redirect_url=url)
 
@@ -255,9 +255,9 @@ class S3ArtifactsStorage(ArtifactsStorage):
 
             key: str = self._object_key(job_id, ARTIFACTS_ARCHIVE_NAME)
             url: str = self._presigner.presign_put_object(
-                    bucket=self._settings.s3_bucket,
-                    key=key,
-                    expires_seconds=self._presign_expires_seconds,
+                bucket=self._settings.s3_bucket,
+                key=key,
+                expires_seconds=self._presign_expires_seconds,
             )
             await asyncio.to_thread(self._http_put_file, url, tmp_path)
         except Exception as e:
@@ -281,11 +281,11 @@ class S3ArtifactsStorage(ArtifactsStorage):
 
     async def _object_exists(self, key: str) -> bool:
         url: str = self._presigner.presign_list_objects_v2(
-                bucket=self._settings.s3_bucket,
-                prefix=key,
-                continuation_token=None,
-                max_keys=1,
-                expires_seconds=self._presign_expires_seconds,
+            bucket=self._settings.s3_bucket,
+            prefix=key,
+            continuation_token=None,
+            max_keys=1,
+            expires_seconds=self._presign_expires_seconds,
         )
         xml_bytes: bytes = await asyncio.to_thread(self._http_get_bytes, url)
         batch, _, _ = self._parse_list_objects_v2(xml_bytes, "")
@@ -354,7 +354,7 @@ class S3ArtifactsStorage(ArtifactsStorage):
             if not full_key.startswith(prefix):
                 continue
 
-            rel_path: str = full_key[len(prefix):]
+            rel_path: str = full_key[len(prefix) :]
             size_bytes: int = int(size_el.text) if size_el is not None and size_el.text is not None else 0
             mtime: float = 0.0
             if lm_el is not None and lm_el.text is not None:
@@ -380,19 +380,19 @@ def _parse_s3_time(val: str) -> datetime:
 
 def _s3_is_configured(settings: Settings) -> bool:
     return all(
-            [
-                settings.s3_endpoint_url,
-                settings.s3_bucket,
-                settings.s3_access_key_id,
-                settings.s3_secret_access_key,
-            ]
+        [
+            settings.s3_endpoint_url,
+            settings.s3_bucket,
+            settings.s3_access_key_id,
+            settings.s3_secret_access_key,
+        ]
     )
 
 
 def create_artifacts_storage(
-        settings: Settings,
-        presign_expires_seconds: int,
-        list_max_keys: int,
+    settings: Settings,
+    presign_expires_seconds: int,
+    list_max_keys: int,
 ) -> ArtifactsStorage:
     """
     Create artifacts storage based on configuration.
@@ -416,16 +416,16 @@ def create_artifacts_storage(
         if not s3_configured:
             raise ValueError("S3 backend selected but S3 settings are not fully configured.")
         return S3ArtifactsStorage(
-                settings=settings,
-                presign_expires_seconds=presign_expires_seconds,
-                list_max_keys=list_max_keys,
+            settings=settings,
+            presign_expires_seconds=presign_expires_seconds,
+            list_max_keys=list_max_keys,
         )
 
     if s3_configured:
         return S3ArtifactsStorage(
-                settings=settings,
-                presign_expires_seconds=presign_expires_seconds,
-                list_max_keys=list_max_keys,
+            settings=settings,
+            presign_expires_seconds=presign_expires_seconds,
+            list_max_keys=list_max_keys,
         )
 
     return LocalArtifactsStorage(root=settings.artifacts_root)

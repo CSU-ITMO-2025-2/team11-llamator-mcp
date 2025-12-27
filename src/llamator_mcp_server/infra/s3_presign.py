@@ -40,6 +40,7 @@ class S3PresignConfig:
     :param secret_access_key: Secret access key.
     :param region: AWS region name (S3-compatible vendors typically accept "us-east-1").
     """
+
     endpoint_url: str
     access_key_id: str
     secret_access_key: str
@@ -69,27 +70,27 @@ class S3Presigner:
 
     def presign_get_object(self, bucket: str, key: str, expires_seconds: int) -> str:
         return self._presign_url(
-                method="GET",
-                canonical_uri=f"/{bucket}/{key.lstrip('/')}",
-                query_params={},
-                expires_seconds=expires_seconds,
+            method="GET",
+            canonical_uri=f"/{bucket}/{key.lstrip('/')}",
+            query_params={},
+            expires_seconds=expires_seconds,
         )
 
     def presign_put_object(self, bucket: str, key: str, expires_seconds: int) -> str:
         return self._presign_url(
-                method="PUT",
-                canonical_uri=f"/{bucket}/{key.lstrip('/')}",
-                query_params={},
-                expires_seconds=expires_seconds,
+            method="PUT",
+            canonical_uri=f"/{bucket}/{key.lstrip('/')}",
+            query_params={},
+            expires_seconds=expires_seconds,
         )
 
     def presign_list_objects_v2(
-            self,
-            bucket: str,
-            prefix: str,
-            continuation_token: str | None,
-            max_keys: int,
-            expires_seconds: int,
+        self,
+        bucket: str,
+        prefix: str,
+        continuation_token: str | None,
+        max_keys: int,
+        expires_seconds: int,
     ) -> str:
         qp: dict[str, str] = {
             "list-type": "2",
@@ -99,18 +100,18 @@ class S3Presigner:
         if continuation_token is not None:
             qp["continuation-token"] = continuation_token
         return self._presign_url(
-                method="GET",
-                canonical_uri=f"/{bucket}",
-                query_params=qp,
-                expires_seconds=expires_seconds,
+            method="GET",
+            canonical_uri=f"/{bucket}",
+            query_params=qp,
+            expires_seconds=expires_seconds,
         )
 
     def _presign_url(
-            self,
-            method: str,
-            canonical_uri: str,
-            query_params: dict[str, str],
-            expires_seconds: int,
+        self,
+        method: str,
+        canonical_uri: str,
+        query_params: dict[str, str],
+        expires_seconds: int,
     ) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be >= 1.")

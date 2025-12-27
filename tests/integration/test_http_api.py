@@ -15,7 +15,7 @@ from tests.conftest import IntegrationTestConfig
 
 
 def _create_run(
-        http_client: HttpJsonClient, headers: dict[str, str], payload: dict[str, Any]
+    http_client: HttpJsonClient, headers: dict[str, str], payload: dict[str, Any]
 ) -> LlamatorTestRunResponse:
     resp: ClientResponse = http_client.post_json("/v1/tests/runs", payload, headers=headers)
     assert resp.status == 200, f"create_run status={resp.status} body={resp.body!r}"
@@ -27,11 +27,11 @@ def _is_terminal_status(status: JobStatus) -> bool:
 
 
 def _wait_job_terminal(
-        http_client: HttpJsonClient,
-        headers: dict[str, str],
-        job_id: str,
-        timeout_s: float,
-        interval_s: float,
+    http_client: HttpJsonClient,
+    headers: dict[str, str],
+    job_id: str,
+    timeout_s: float,
+    interval_s: float,
 ) -> LlamatorJobInfo:
     """
     Wait until a job transitions into a terminal state.
@@ -59,7 +59,8 @@ def _wait_job_terminal(
         time.sleep(float(interval_s))
 
     raise AssertionError(
-        f"Job did not finish within timeout job_id={job_id} last_status={last_info.status if last_info is not None else None}")
+        f"Job did not finish within timeout job_id={job_id} last_status={last_info.status if last_info is not None else None}"
+    )
 
 
 def _artifact_download_path(job_id: str, rel_path: str) -> str:
@@ -83,9 +84,9 @@ def test_health(http_client: HttpJsonClient, http_headers: dict[str, str]) -> No
 
 
 def test_create_run_and_get_status(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
     assert created.job_id
@@ -111,9 +112,9 @@ def test_get_nonexistent_job_404(http_client: HttpJsonClient, http_headers: dict
 
 
 def test_list_artifacts_schema(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
 
@@ -130,21 +131,21 @@ def test_list_artifacts_schema(
 
 
 def test_download_artifact_rejects_path_traversal(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
 
     resp: ClientResponse = http_client.get(
-            f"/v1/tests/runs/{created.job_id}/artifacts/../secrets.txt",
-            headers=http_headers,
+        f"/v1/tests/runs/{created.job_id}/artifacts/../secrets.txt",
+        headers=http_headers,
     )
     assert resp.status == 400, f"expected 400, got {resp.status} body={resp.body!r}"
 
 
 def test_create_run_validation_error_duplicate_param_names(
-        http_client: HttpJsonClient, http_headers: dict[str, str]
+    http_client: HttpJsonClient, http_headers: dict[str, str]
 ) -> None:
     payload: dict[str, Any] = {
         "tested_model": {"kind": "openai", "base_url": "http://localhost:9999/v1", "model": "dummy"},
@@ -169,20 +170,20 @@ def test_create_run_validation_error_duplicate_param_names(
 
 
 def test_download_any_artifact_after_job_completion(
-        http_client: HttpJsonClient,
-        http_headers: dict[str, str],
-        minimal_run_request_payload: dict[str, Any],
-        it_config: IntegrationTestConfig,
-        capsys: Any,
+    http_client: HttpJsonClient,
+    http_headers: dict[str, str],
+    minimal_run_request_payload: dict[str, Any],
+    it_config: IntegrationTestConfig,
+    capsys: Any,
 ) -> None:
     created: LlamatorTestRunResponse = _create_run(http_client, http_headers, minimal_run_request_payload)
 
     final_info: LlamatorJobInfo = _wait_job_terminal(
-            http_client=http_client,
-            headers=http_headers,
-            job_id=created.job_id,
-            timeout_s=it_config.http_timeout_s,
-            interval_s=0.5,
+        http_client=http_client,
+        headers=http_headers,
+        job_id=created.job_id,
+        timeout_s=it_config.http_timeout_s,
+        interval_s=0.5,
     )
     assert _is_terminal_status(final_info.status)
 
@@ -201,7 +202,9 @@ def test_download_any_artifact_after_job_completion(
 
     if resp_dl.status == 307:
         url: str | None = resp_dl.headers.get("location")
-        assert url is not None and url.strip(), f"Expected Location header for 307 redirect job_id={created.job_id} path={first_path}"
+        assert (
+            url is not None and url.strip()
+        ), f"Expected Location header for 307 redirect job_id={created.job_id} path={first_path}"
         with capsys.disabled():
             print(f"artifact_download_url={url}")
         return

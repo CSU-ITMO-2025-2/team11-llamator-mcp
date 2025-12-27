@@ -52,9 +52,9 @@ def _safe_log_request(req: LlamatorTestRunRequest) -> dict[str, Any]:
 
 
 async def _await_job_completion(
-        store: JobStore,
-        job_id: str,
-        timeout_seconds: int,
+    store: JobStore,
+    job_id: str,
+    timeout_seconds: int,
 ) -> LlamatorJobInfo:
     """
     Дождаться завершения задания (SUCCEEDED/FAILED), опрашивая JobStore.
@@ -116,11 +116,11 @@ async def _try_get_artifacts_download_url(artifacts: ArtifactsStorage, job_id: s
 
 
 def build_mcp(
-        settings: Settings,
-        redis: Redis,
-        arq: ArqRedis,
-        logger: logging.Logger,
-        artifacts: ArtifactsStorage,
+    settings: Settings,
+    redis: Redis,
+    arq: ArqRedis,
+    logger: logging.Logger,
+    artifacts: ArtifactsStorage,
 ) -> FastMCP:
     """
     Построить MCP сервер с инструментами для запуска и мониторинга LLAMATOR.
@@ -132,10 +132,10 @@ def build_mcp(
     :return: Экземпляр FastMCP.
     """
     mcp: FastMCP = FastMCP(
-            name="llamator-mcp-server",
-            stateless_http=True,
-            streamable_http_path=settings.mcp_streamable_http_path,
-            json_response=True,
+        name="llamator-mcp-server",
+        stateless_http=True,
+        streamable_http_path=settings.mcp_streamable_http_path,
+        json_response=True,
     )
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
@@ -164,9 +164,9 @@ def build_mcp(
 
         logger.info(f"Awaiting LLAMATOR job completion job_id={submitted.job_id}")
         info: LlamatorJobInfo = await _await_job_completion(
-                store=store,
-                job_id=submitted.job_id,
-                timeout_seconds=settings.run_timeout_seconds,
+            store=store,
+            job_id=submitted.job_id,
+            timeout_seconds=settings.run_timeout_seconds,
         )
 
         aggregated: dict[str, dict[str, int]] = _extract_aggregated_result(submitted.job_id, info)

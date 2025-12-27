@@ -68,11 +68,11 @@ class _ExecutionContext:
     @classmethod
     def from_ctx(cls, ctx: dict[str, Any]) -> "_ExecutionContext":
         return cls(
-                settings=ctx["settings"],
-                logger=ctx["logger"],
-                store=ctx["store"],
-                artifacts=ctx["artifacts_storage"],
-                artifacts_backend_resolved=ctx["artifacts_backend_resolved"],
+            settings=ctx["settings"],
+            logger=ctx["logger"],
+            store=ctx["store"],
+            artifacts=ctx["artifacts_storage"],
+            artifacts_backend_resolved=ctx["artifacts_backend_resolved"],
         )
 
 
@@ -100,24 +100,24 @@ class _RunInputs:
         artifacts_root: Path = Path(str(run_config["artifacts_path"])).resolve(strict=False)
 
         return cls(
-                job_id=job_id,
-                attack_model=attack_model,
-                tested_model=tested_model,
-                judge_model=judge_model,
-                plan=plan,
-                run_config=run_config,
-                artifacts_root=artifacts_root,
+            job_id=job_id,
+            attack_model=attack_model,
+            tested_model=tested_model,
+            judge_model=judge_model,
+            plan=plan,
+            run_config=run_config,
+            artifacts_root=artifacts_root,
         )
 
     def to_resolved_run(self) -> ResolvedRun:
         return ResolvedRun(
-                job_id=self.job_id,
-                attack_model=self.attack_model,
-                tested_model=self.tested_model,
-                judge_model=self.judge_model,
-                plan=self.plan,
-                run_config=self.run_config,
-                artifacts_root=self.artifacts_root,
+            job_id=self.job_id,
+            attack_model=self.attack_model,
+            tested_model=self.tested_model,
+            judge_model=self.judge_model,
+            plan=self.plan,
+            run_config=self.run_config,
+            artifacts_root=self.artifacts_root,
         )
 
 
@@ -130,12 +130,12 @@ class _ArtifactsLifecycle:
     """
 
     def __init__(
-            self,
-            logger: logging.Logger,
-            artifacts: ArtifactsStorage,
-            job_id: str,
-            local_root: Path,
-            resolved_backend: str,
+        self,
+        logger: logging.Logger,
+        artifacts: ArtifactsStorage,
+        job_id: str,
+        local_root: Path,
+        resolved_backend: str,
     ) -> None:
         self._logger: logging.Logger = logger
         self._artifacts: ArtifactsStorage = artifacts
@@ -152,17 +152,17 @@ class _ArtifactsLifecycle:
         """
         try:
             self._logger.info(
-                    f"Worker job_id={self._job_id} status=artifacts_uploading job_status={job_status} path={self._local_root}"
+                f"Worker job_id={self._job_id} status=artifacts_uploading job_status={job_status} path={self._local_root}"
             )
             await self._artifacts.upload_job_artifacts(job_id=self._job_id, local_root=self._local_root)
             self._logger.info(
-                    f"Worker job_id={self._job_id} status=artifacts_uploaded job_status={job_status} path={self._local_root}"
+                f"Worker job_id={self._job_id} status=artifacts_uploaded job_status={job_status} path={self._local_root}"
             )
             return True
         except Exception as exc:
             self._logger.error(
-                    f"Worker job_id={self._job_id} status=artifacts_upload_failed job_status={job_status} "
-                    f"error={type(exc).__name__}: {exc}"
+                f"Worker job_id={self._job_id} status=artifacts_upload_failed job_status={job_status} "
+                f"error={type(exc).__name__}: {exc}"
             )
             return False
 
@@ -185,8 +185,8 @@ class _ArtifactsLifecycle:
             return
         except Exception as exc:
             self._logger.warning(
-                    f"Worker job_id={self._job_id} status=artifacts_local_cleanup_failed "
-                    f"error={type(exc).__name__}: {exc}"
+                f"Worker job_id={self._job_id} status=artifacts_local_cleanup_failed "
+                f"error={type(exc).__name__}: {exc}"
             )
 
 
@@ -213,11 +213,11 @@ class _JobExecutor:
         try:
             inputs: _RunInputs = _RunInputs.from_payload(job_id=job_id, payload=payload)
             lifecycle = _ArtifactsLifecycle(
-                    logger=self._logger,
-                    artifacts=self._artifacts,
-                    job_id=job_id,
-                    local_root=inputs.artifacts_root,
-                    resolved_backend=self._resolved_backend,
+                logger=self._logger,
+                artifacts=self._artifacts,
+                job_id=job_id,
+                local_root=inputs.artifacts_root,
+                resolved_backend=self._resolved_backend,
             )
 
             resolved: ResolvedRun = inputs.to_resolved_run()
@@ -251,9 +251,9 @@ async def worker_startup(ctx: dict[str, Any]) -> None:
     await redis.ping()
 
     artifacts: ArtifactsStorage = create_artifacts_storage(
-            settings=settings,
-            presign_expires_seconds=15 * 60,
-            list_max_keys=1000,
+        settings=settings,
+        presign_expires_seconds=15 * 60,
+        list_max_keys=1000,
     )
 
     resolved_backend: str = "local"
@@ -261,16 +261,16 @@ async def worker_startup(ctx: dict[str, Any]) -> None:
         resolved_backend = "s3"
 
     s3_configured: bool = all(
-            [
-                settings.s3_endpoint_url,
-                settings.s3_bucket,
-                settings.s3_access_key_id,
-                settings.s3_secret_access_key,
-            ]
+        [
+            settings.s3_endpoint_url,
+            settings.s3_bucket,
+            settings.s3_access_key_id,
+            settings.s3_secret_access_key,
+        ]
     )
     logger.info(
-            f"Artifacts backend initialized configured={settings.artifacts_backend} "
-            f"resolved={resolved_backend} s3_configured={s3_configured}"
+        f"Artifacts backend initialized configured={settings.artifacts_backend} "
+        f"resolved={resolved_backend} s3_configured={s3_configured}"
     )
 
     ctx["settings"] = settings
@@ -280,7 +280,7 @@ async def worker_startup(ctx: dict[str, Any]) -> None:
     ctx["artifacts_storage"] = artifacts
     ctx["artifacts_backend_resolved"] = resolved_backend
 
-    logger.info(f"ARQ worker startup completed status=ready")
+    logger.info("ARQ worker startup completed status=ready")
 
 
 async def worker_shutdown(ctx: dict[str, Any]) -> None:
@@ -291,7 +291,7 @@ async def worker_shutdown(ctx: dict[str, Any]) -> None:
         await redis.aclose()
 
     if logger is not None:
-        logger.info(f"ARQ worker shutdown completed status=stopped")
+        logger.info("ARQ worker shutdown completed status=stopped")
 
 
 async def run_llamator_job(ctx: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
