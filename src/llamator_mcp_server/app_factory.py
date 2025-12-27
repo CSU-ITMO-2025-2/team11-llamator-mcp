@@ -89,7 +89,12 @@ def create_app() -> FastAPI:
 
             yield
 
-    app = FastAPI(title="llamator-mcp-server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="llamator-mcp-server",
+        version="0.1.0",
+        lifespan=lifespan,
+        swagger_ui_parameters={"persistAuthorization": True},
+    )
 
     # Prometheus metrics at /metrics
     Instrumentator().instrument(app).expose(app)

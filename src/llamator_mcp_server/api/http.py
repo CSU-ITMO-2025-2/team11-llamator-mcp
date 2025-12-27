@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import os
 from pathlib import Path
@@ -8,9 +6,10 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
+from fastapi import Security
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
+from fastapi.security.api_key import APIKeyHeader
 from llamator_mcp_server.config.settings import Settings
 from llamator_mcp_server.domain.models import ArtifactFileInfo
 from llamator_mcp_server.domain.models import ArtifactsListResponse
@@ -62,6 +61,30 @@ def _list_files(root: Path) -> list[dict[str, Any]]:
     return results
 
 
+_API_KEY_SCHEME: APIKeyHeader = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    scheme_name="McpApiKey",
+)
+
+
+class _ApiKeyDependency:
+    """
+    FastAPI dependency enforcing X-API-Key authentication.
+
+    This dependency is intended to be attached to a protected router, while
+    public routes (e.g. healthchecks) are mounted on a separate router without it.
+
+    :param settings: Application settings.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings: Settings = settings
+
+    async def __call__(self, x_api_key: str | None = Security(_API_KEY_SCHEME)) -> None:
+        await require_api_key(settings=self._settings, x_api_key=x_api_key)
+
+
 def build_router(
     settings: Settings,
     redis: Redis,
@@ -78,16 +101,26 @@ def build_router(
     :param logger: Логгер.
     :return: Роутер FastAPI.
     """
+    root_router: APIRouter = APIRouter()
 
-    async def _require_api_key_dep(request: Request) -> None:
-        await require_api_key(settings=settings, x_api_key=request.headers.get("x-api-key"))
-
-    router: APIRouter = APIRouter(dependencies=[Depends(_require_api_key_dep)])
+    public_router: APIRouter = APIRouter()
+    api_key_dep: _ApiKeyDependency = _ApiKeyDependency(settings=settings)
+    protected_router: APIRouter = APIRouter(dependencies=[Depends(api_key_dep)])
 
     store: JobStore = JobStore(redis=redis, ttl_seconds=settings.job_ttl_seconds)
     service: TestRunService = TestRunService(arq=arq, store=store, settings=settings, logger=logger)
 
-    @router.post("/v1/tests/runs", response_model=LlamatorTestRunResponse)
+    @public_router.get("/v1/health", response_model=HealthResponse)
+    @public_router.get("/health", response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        """
+        Проверка здоровья сервиса.
+
+        :return: Статус сервера.
+        """
+        return HealthResponse(status="ok")
+
+    @protected_router.post("/v1/tests/runs", response_model=LlamatorTestRunResponse)
     async def create_run(req: LlamatorTestRunRequest) -> LlamatorTestRunResponse:
         """
         Создать задание на тестирование.
@@ -104,7 +137,7 @@ def build_router(
         result = await service.submit(req)
         return LlamatorTestRunResponse(job_id=result.job_id, status=result.status, created_at=result.created_at)
 
-    @router.get("/v1/tests/runs/{job_id}", response_model=LlamatorJobInfo)
+    @protected_router.get("/v1/tests/runs/{job_id}", response_model=LlamatorJobInfo)
     async def get_run(job_id: str) -> LlamatorJobInfo:
         """
         Получить состояние задания.
@@ -118,7 +151,7 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-    @router.get("/v1/tests/runs/{job_id}/artifacts", response_model=ArtifactsListResponse)
+    @protected_router.get("/v1/tests/runs/{job_id}/artifacts", response_model=ArtifactsListResponse)
     async def list_artifacts(job_id: str) -> ArtifactsListResponse:
         """
         Получить список файлов артефактов по заданию.
@@ -144,7 +177,7 @@ def build_router(
         parsed_files: list[ArtifactFileInfo] = [ArtifactFileInfo.model_validate(f) for f in files]
         return ArtifactsListResponse(job_id=job_id, files=parsed_files)
 
-    @router.get(
+    @protected_router.get(
         "/v1/tests/runs/{job_id}/artifacts/{path:path}",
         response_model=None,
         responses={
@@ -188,14 +221,6 @@ def build_router(
 
         return FileResponse(path=str(target.local_path), filename=target.local_path.name)
 
-    @router.get("/v1/health", response_model=HealthResponse)
-    @router.get("/health", response_model=HealthResponse)
-    async def health() -> HealthResponse:
-        """
-        Проверка здоровья сервиса.
-
-        :return: Статус сервера.
-        """
-        return HealthResponse(status="ok")
-
-    return router
+    root_router.include_router(public_router)
+    root_router.include_router(protected_router)
+    return root_router
