@@ -284,7 +284,7 @@ class S3ArtifactsStorage(ArtifactsStorage):
         conn_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
         conn = conn_cls(parsed.netloc, timeout=60)
         try:
-            conn.putrequest("PUT", target)
+            conn.putrequest("PUT", target, skip_host=True, skip_accept_encoding=True)
             conn.putheader("Host", parsed.netloc)
             conn.putheader("Content-Length", str(size))
             conn.endheaders()
