@@ -52,22 +52,22 @@ def create_app() -> FastAPI:
             stack.push_async_callback(_close_arq_pool, arq_pool)
 
             artifacts = create_artifacts_storage(
-                settings=settings,
-                presign_expires_seconds=15 * 60,
-                list_max_keys=1000,
+                    settings=settings,
+                    presign_expires_seconds=15 * 60,
+                    list_max_keys=1000,
             )
             resolved_backend: str = "s3" if isinstance(artifacts, S3ArtifactsStorage) else "local"
             s3_configured: bool = all(
-                [
-                    settings.s3_endpoint_url,
-                    settings.s3_bucket,
-                    settings.s3_access_key_id,
-                    settings.s3_secret_access_key,
-                ]
+                    [
+                        settings.s3_endpoint_url,
+                        settings.s3_bucket,
+                        settings.s3_access_key_id,
+                        settings.s3_secret_access_key,
+                    ]
             )
             logger.info(
-                f"Artifacts backend initialized configured={settings.artifacts_backend} "
-                f"resolved={resolved_backend} s3_configured={s3_configured}"
+                    f"Artifacts backend initialized configured={settings.artifacts_backend} "
+                    f"resolved={resolved_backend} s3_configured={s3_configured}"
             )
 
             app.state.settings = settings
@@ -90,10 +90,10 @@ def create_app() -> FastAPI:
             yield
 
     app = FastAPI(
-        title="llamator-mcp-server",
-        version="0.1.0",
-        lifespan=lifespan,
-        swagger_ui_parameters={"persistAuthorization": True},
+            title="llamator-mcp-server",
+            version="0.2.0",
+            lifespan=lifespan,
+            swagger_ui_parameters={"persistAuthorization": True},
     )
 
     # Prometheus metrics at /metrics
