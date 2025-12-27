@@ -5,14 +5,21 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import FileResponse
-from redis.asyncio import Redis
-
+from fastapi.responses import RedirectResponse
 from llamator_mcp_server.config.settings import Settings
-from llamator_mcp_server.domain.models import LlamatorJobInfo, LlamatorTestRunRequest, LlamatorTestRunResponse
-from llamator_mcp_server.domain.services import TestRunService, validate_test_specs
+from llamator_mcp_server.domain.models import LlamatorJobInfo
+from llamator_mcp_server.domain.models import LlamatorTestRunRequest
+from llamator_mcp_server.domain.models import LlamatorTestRunResponse
+from llamator_mcp_server.domain.services import TestRunService
+from llamator_mcp_server.domain.services import validate_test_specs
+from llamator_mcp_server.infra.artifacts_storage import ArtifactsStorage
 from llamator_mcp_server.infra.job_store import JobStore
+from redis.asyncio import Redis
 
 from .security import require_api_key
 
@@ -51,10 +58,11 @@ def _list_files(root: Path) -> list[dict[str, Any]]:
 
 
 def build_router(
-    settings: Settings,
-    redis: Redis,
-    arq: Any,
-    logger: logging.Logger,
+        settings: Settings,
+        redis: Redis,
+        arq: Any,
+        logger: logging.Logger,
+        artifacts: ArtifactsStorage,
 ) -> APIRouter:
     """
     Построить HTTP роутер API.
@@ -119,13 +127,14 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-        root: Path = settings.artifacts_root / job_id
-        if not root.exists():
-            return {"job_id": job_id, "files": []}
-        return {"job_id": job_id, "files": _list_files(root)}
+        files: list[dict[str, Any]] = await artifacts.list_files(job_id)
+        for f in files:
+            if "full_key" in f:
+                f.pop("full_key", None)
+        return {"job_id": job_id, "files": files}
 
     @router.get("/v1/tests/runs/{job_id}/artifacts/{path:path}")
-    async def download_artifact(job_id: str, path: str) -> FileResponse:
+    async def download_artifact(job_id: str, path: str) -> Any:
         """
         Скачать конкретный файл артефакта.
 
@@ -139,18 +148,23 @@ def build_router(
         except KeyError:
             raise HTTPException(status_code=404, detail="Not found")
 
-        artifacts_root: Path = settings.artifacts_root / job_id
         try:
-            file_path: Path = _safe_join(artifacts_root, path)
+            target = await artifacts.resolve_download(job_id=job_id, rel_path=path)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid path")
-
-        if not file_path.is_file():
+        except FileNotFoundError:
             raise HTTPException(status_code=404, detail="File not found")
 
-        return FileResponse(path=str(file_path), filename=file_path.name)
+        if target.redirect_url is not None:
+            return RedirectResponse(url=target.redirect_url, status_code=307)
+
+        if target.local_path is None:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        return FileResponse(path=str(target.local_path), filename=target.local_path.name)
 
     @router.get("/v1/health")
+    @router.get("/health")
     async def health() -> dict[str, str]:
         """
         Проверка здоровья сервиса.

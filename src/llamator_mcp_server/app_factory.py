@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
+from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from arq import create_pool
 from arq.connections import ArqRedis
 from fastapi import FastAPI
-from prometheus_fastapi_instrumentator import Instrumentator
-from redis.asyncio import Redis
-
-from llamator_mcp_server.api.asgi_wrappers import _ApiKeyAsgiWrapper, _McpSseToJsonWrapper
+from llamator_mcp_server.api.asgi_wrappers import _ApiKeyAsgiWrapper
+from llamator_mcp_server.api.asgi_wrappers import _McpSseToJsonWrapper
 from llamator_mcp_server.api.http import build_router
 from llamator_mcp_server.api.mcp_server import build_mcp
 from llamator_mcp_server.config.settings import settings
-from llamator_mcp_server.infra.redis import create_redis_client, parse_redis_settings
-from llamator_mcp_server.utils.logging import LOGGER_NAME, configure_logging
+from llamator_mcp_server.infra.artifacts_storage import create_artifacts_storage
+from llamator_mcp_server.infra.redis import create_redis_client
+from llamator_mcp_server.infra.redis import parse_redis_settings
+from llamator_mcp_server.utils.logging import LOGGER_NAME
+from llamator_mcp_server.utils.logging import configure_logging
+from prometheus_fastapi_instrumentator import Instrumentator
+from redis.asyncio import Redis
 
 
 async def _close_arq_pool(arq_pool: ArqRedis) -> None:
@@ -46,12 +50,20 @@ def create_app() -> FastAPI:
             arq_pool: ArqRedis = await create_pool(parse_redis_settings(settings.redis_dsn))
             stack.push_async_callback(_close_arq_pool, arq_pool)
 
+            artifacts = create_artifacts_storage(
+                    settings=settings,
+                    presign_expires_seconds=15 * 60,
+                    list_max_keys=1000,
+            )
+            logger.info(f"Artifacts backend initialized backend={settings.artifacts_backend}")
+
             app.state.settings = settings
             app.state.redis = redis
             app.state.arq = arq_pool
             app.state.logger = logger
+            app.state.artifacts = artifacts
 
-            router = build_router(settings=settings, redis=redis, arq=arq_pool, logger=logger)
+            router = build_router(settings=settings, redis=redis, arq=arq_pool, logger=logger, artifacts=artifacts)
             app.include_router(router)
 
             mcp = build_mcp(settings=settings, redis=redis, arq=arq_pool, logger=logger)
