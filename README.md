@@ -474,6 +474,13 @@ Optional override:
 
 - `LLAMATOR_MCP_TEST_BASE_URL` allows running tests against an already deployed service.
 
+## Maintainers
+
+- Roman Neronov - roman.nieronov@mail.ru
+- Timur Nizamov - abc@nizamovtimur.ru
+- Ilia Tambovtsev - tambovtsev.io@phystech.edu
+- Alina Nikitina - nikitinaalina.work@gmail.com
+
 ## License 📜
 
 This project is licensed under the terms of the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0
